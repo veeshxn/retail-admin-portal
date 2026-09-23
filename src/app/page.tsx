@@ -307,7 +307,7 @@ export default function OperationsPortal() {
     return () => unsubscribe();
   }, [adminRole]);
 
-  // Robust Daily Impressions listener: Aggregates both Ad QR Scans and Surprise Box QR Scans
+  // Daily impressions listener: accurately parses totals without double-counting
   useEffect(() => {
     if (!adminRole) return;
     const unsubscribe = onSnapshot(collection(db, "daily_impressions"), (snapshot) => {
@@ -337,39 +337,48 @@ export default function OperationsPortal() {
         metrics[storeId].total_impressions += Number(data.total_impressions || 0);
         metrics[storeId].total_ble_footfall += Number(data.total_ble_footfall || 0);
 
-        // Parse Mystery Box Taps (handling nested maps, flat keys, and top-level numbers)
-        let tapCount = Number(data.total_mystery_taps || 0);
-        if (data.mystery_taps && typeof data.mystery_taps === "object") {
-          tapCount += Object.values(data.mystery_taps).reduce((sum: number, val: any) => sum + Number(val || 0), 0);
+        // 1. Parse Mystery Taps (Prioritize top-level total to eliminate double counting)
+        let tapCount = 0;
+        if (typeof data.total_mystery_taps === "number") {
+          tapCount = data.total_mystery_taps;
+        } else if (data.mystery_taps && typeof data.mystery_taps === "object") {
+          tapCount = Object.values(data.mystery_taps).reduce((sum: number, val: any) => sum + Number(val || 0), 0);
+        } else {
+          Object.keys(data).forEach((key) => {
+            if (key.startsWith("mystery_taps.") && typeof data[key] === "number") {
+              tapCount += Number(data[key]);
+            }
+          });
         }
-        Object.keys(data).forEach((key) => {
-          if (key.startsWith("mystery_taps.") && typeof data[key] === "number") {
-            tapCount += Number(data[key]);
-          }
-        });
         metrics[storeId].total_mystery_taps += tapCount;
 
-        // 1. Parse Commercial Ad QR Scans (qr_scans)
+        // 2. Parse Commercial Ad QR Scans (qr_scans)
         let adQrCount = 0;
-        if (data.qr_scans && typeof data.qr_scans === "object") {
-          adQrCount += Object.values(data.qr_scans).reduce((sum: number, val: any) => sum + Number(val || 0), 0);
+        if (typeof data.total_qr_scans === "number") {
+          adQrCount = data.total_qr_scans;
+        } else if (data.qr_scans && typeof data.qr_scans === "object") {
+          adQrCount = Object.values(data.qr_scans).reduce((sum: number, val: any) => sum + Number(val || 0), 0);
+        } else {
+          Object.keys(data).forEach((key) => {
+            if (key.startsWith("qr_scans.") && typeof data[key] === "number") {
+              adQrCount += Number(data[key]);
+            }
+          });
         }
-        Object.keys(data).forEach((key) => {
-          if (key.startsWith("qr_scans.") && typeof data[key] === "number") {
-            adQrCount += Number(data[key]);
-          }
-        });
 
-        // 2. Parse Surprise Box / Coupon QR Scans (mystery_scans)
+        // 3. Parse Surprise Box / Coupon QR Scans (mystery_scans)
         let mysteryQrCount = 0;
-        if (data.mystery_scans && typeof data.mystery_scans === "object") {
-          mysteryQrCount += Object.values(data.mystery_scans).reduce((sum: number, val: any) => sum + Number(val || 0), 0);
+        if (typeof data.total_mystery_scans === "number") {
+          mysteryQrCount = data.total_mystery_scans;
+        } else if (data.mystery_scans && typeof data.mystery_scans === "object") {
+          mysteryQrCount = Object.values(data.mystery_scans).reduce((sum: number, val: any) => sum + Number(val || 0), 0);
+        } else {
+          Object.keys(data).forEach((key) => {
+            if (key.startsWith("mystery_scans.") && typeof data[key] === "number") {
+              mysteryQrCount += Number(data[key]);
+            }
+          });
         }
-        Object.keys(data).forEach((key) => {
-          if (key.startsWith("mystery_scans.") && typeof data[key] === "number") {
-            mysteryQrCount += Number(data[key]);
-          }
-        });
 
         metrics[storeId].ad_qr_scans += adQrCount;
         metrics[storeId].mystery_qr_scans += mysteryQrCount;
@@ -559,7 +568,7 @@ export default function OperationsPortal() {
 
       if (otaApkFile) {
         const storageRef = ref(storage, `ota/build_${otaVersionCode}_${Date.now()}.apk`);
-        const uploadTask = uploadBytesResumable(storageRef, otaApkFile);
+        const uploadTask = uploadBytesResumable(storageRef, videoFile || otaApkFile);
 
         await new Promise<void>((resolve, reject) => {
           uploadTask.on(
@@ -620,7 +629,6 @@ export default function OperationsPortal() {
     }
   };
 
-  // CHANGE 1: Onboard Store with Flat, Per Scan, and Hybrid (Per Scan + Base)
   const handleCreateStore = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isMaster) return;
@@ -852,7 +860,7 @@ export default function OperationsPortal() {
     }
   };
 
-  // CHANGE 1: Calculate Shopkeeper Payout based on QR Scans (not footfall)
+  // Calculate Shopkeeper Payout based purely on QR Scans
   const calculateStorePayout = (store: StoreRecord): number => {
     const totalScans = analyticsMap[store.storeId]?.total_qr_scans || 0;
     const rate = store.ratePerScan ?? store.ratePerFootfall ?? 2.00;
@@ -1177,7 +1185,6 @@ export default function OperationsPortal() {
           <>
             {showMap && <FleetMap devices={mapDevices} />}
 
-            {/* CHANGE 2: 5 Top KPI Summary Cards including Verified QR Scans */}
             <div className="grid grid-cols-1 sm:grid-cols-5 gap-4">
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
                 <div>
@@ -1303,9 +1310,7 @@ export default function OperationsPortal() {
                       </div>
                     </div>
 
-                    {/* CHANGE 2: Prominently displaying BOTH QR Code Scans & Surprise Screen Taps */}
                     <div className="space-y-1.5">
-                      {/* 1. Commercial Ad QR Scans */}
                       <div className="flex items-center justify-between text-[11px] text-sky-400 bg-sky-500/10 border border-sky-500/20 px-2.5 py-1 rounded-md">
                         <div className="flex items-center gap-1.5">
                           <QrCode className="w-3.5 h-3.5" />
@@ -1314,7 +1319,6 @@ export default function OperationsPortal() {
                         <span className="font-mono font-bold">{metrics.ad_qr_scans}</span>
                       </div>
 
-                      {/* 2. Surprise Box / Coupon QR Scans */}
                       <div className="flex items-center justify-between text-[11px] text-fuchsia-400 bg-fuchsia-500/10 border border-fuchsia-500/20 px-2.5 py-1 rounded-md">
                         <div className="flex items-center gap-1.5">
                           <QrCode className="w-3.5 h-3.5" />
@@ -1323,7 +1327,6 @@ export default function OperationsPortal() {
                         <span className="font-mono font-bold">{metrics.mystery_qr_scans}</span>
                       </div>
 
-                      {/* 3. Interactive Mystery Box Screen Taps */}
                       {metrics.total_mystery_taps > 0 && (
                         <div className="flex items-center justify-between text-[11px] text-purple-400 bg-purple-500/10 border border-purple-500/20 px-2.5 py-1 rounded-md">
                           <div className="flex items-center gap-1.5">
@@ -1750,7 +1753,6 @@ export default function OperationsPortal() {
                               {store.openTime} - {store.closeTime}
                             </td>
 
-                            {/* CHANGE 1: Display Flat, Per Scan, or Hybrid */}
                             <td className="px-6 py-4">
                               <span className="inline-block px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-800 text-slate-300 border border-slate-700">
                                 {store.payoutModel === "FIXED" && `Flat ₹${store.baseRent.toLocaleString()}`}
@@ -1759,7 +1761,6 @@ export default function OperationsPortal() {
                               </span>
                             </td>
 
-                            {/* CHANGE 2: Display QR scans count with breakdown */}
                             <td className="px-6 py-4">
                               <span className="font-mono font-bold text-emerald-400">
                                 {storeMetrics.total_qr_scans.toLocaleString()}
@@ -2112,7 +2113,6 @@ export default function OperationsPortal() {
                 </div>
               </div>
 
-              {/* CHANGE 1: Edit Agreed Payout Model based on Scans */}
               <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-3">
                 <label className="block text-xs font-bold text-indigo-400">
                   Agreed Payout Model
@@ -2565,7 +2565,6 @@ export default function OperationsPortal() {
                 </div>
               </div>
 
-              {/* CHANGE 1: Onboard Store Agreed Payout Model based on Scans */}
               <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-3">
                 <label className="block text-xs font-bold text-emerald-400">
                   Agreed Payout Agreement Model
