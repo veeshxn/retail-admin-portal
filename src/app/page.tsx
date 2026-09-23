@@ -668,7 +668,7 @@ export default function OperationsPortal() {
 
       if (otaApkFile) {
         const storageRef = ref(storage, `ota/build_${otaVersionCode}_${Date.now()}.apk`);
-        const uploadTask = uploadBytesResumable(storageRef, videoFile || otaApkFile);
+        const uploadTask = uploadBytesResumable(storageRef, otaApkFile);
 
         await new Promise<void>((resolve, reject) => {
           uploadTask.on(
@@ -1512,7 +1512,7 @@ export default function OperationsPortal() {
                   </div>
                 </div>
                 <div className="text-xs text-slate-400">
-                  Active Contracts Value: <b className="text-fuchsia-400 font-mono text-sm">₹{mysteryCampaigns.filter(m => m.isActive).reduce((sum, m) => sum + m.contractAmount, 0).toLocaleString()}</b>
+                  Active Contracts Value: <b className="text-fuchsia-400 font-mono text-sm">₹{totalMysteryRevenue.toLocaleString()}</b>
                 </div>
               </div>
 
@@ -1523,7 +1523,7 @@ export default function OperationsPortal() {
                   </div>
                 ) : (
                   mysteryCampaigns.map((m) => {
-                    const taps = individualMysteryTaps[m.id] || 0;
+                    const taps = individualMysteryTaps[m.id] || individualMysteryTaps[`mystery_${m.id}`] || 0;
                     const scans = individualMysteryScans[m.id] || individualMysteryScans[`mystery_${m.id}`] || 0;
 
                     return (
@@ -1597,7 +1597,7 @@ export default function OperationsPortal() {
                   </div>
                 </div>
                 <div className="text-xs text-slate-400">
-                  Active Contracts Value: <b className="text-emerald-400 font-mono text-sm">₹{totalDynamicRevenue.toLocaleString()}</b>
+                  Active Contracts Value: <b className="text-emerald-400 font-mono text-sm">₹{totalAdRevenue.toLocaleString()}</b>
                 </div>
               </div>
 
@@ -2326,6 +2326,10 @@ export default function OperationsPortal() {
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">Or Direct Video URL (Optional fallback)</label>
                 <input type="url" value={adVideoUrl} onChange={(e) => setAdVideoUrl(e.target.value)} placeholder="https://.../video.mp4" className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Action / QR Target URL</label>
+                <input type="url" value={adActionUrl} onChange={(e) => setAdActionUrl(e.target.value)} placeholder="https://brand.com/deal" className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white" />
               </div>
               <div className="flex justify-end gap-2 pt-2">
                 <button type="button" onClick={() => setNewAdModal(false)} className="px-4 py-2 rounded-lg bg-slate-800 text-xs font-semibold text-slate-300">Cancel</button>
