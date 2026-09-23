@@ -1566,7 +1566,7 @@ export default function OperationsPortal() {
                           </div>
                         )}
 
-                        {/* Advertiser Portal Link & Client PIN Card */}
+                        {/* Mystery Portal Link & Client PIN Card */}
                         <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
                           <div className="flex items-center justify-between text-xs">
                             <span className="text-slate-400">Advertiser Portal URL:</span>
@@ -1691,7 +1691,7 @@ export default function OperationsPortal() {
                           </div>
                         )}
 
-                        {/* Advertiser Portal Link & Client PIN Card with Copy & Open Portal Button */}
+                        {/* Video Ad Advertiser Portal Link & Client PIN Card (Corrected to /campaign/ad_...) */}
                         <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
                           <div className="flex items-center justify-between text-xs">
                             <span className="text-slate-400">Advertiser Portal URL:</span>
