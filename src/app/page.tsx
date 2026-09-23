@@ -577,10 +577,11 @@ export default function OperationsPortal() {
       const items: MysteryCampaign[] = [];
       snapshot.forEach((docSnap) => {
         const d = docSnap.data();
+        const campaignId = d.id || docSnap.id;
         items.push({
           docId: docSnap.id,
-          id: d.id || docSnap.id,
-          title: d.title || docSnap.id,
+          id: campaignId,
+          title: d.title || campaignId,
           brand: d.brand || "Brand Partner",
           couponCode: d.couponCode || d.promoCode || "DEAL10",
           discountText: d.discountText || d.offer || "Special Reward",
@@ -1523,15 +1524,16 @@ export default function OperationsPortal() {
                   </div>
                 ) : (
                   mysteryCampaigns.map((m) => {
-                    const taps = individualMysteryTaps[m.id] || individualMysteryTaps[`mystery_${m.id}`] || 0;
-                    const scans = individualMysteryScans[m.id] || individualMysteryScans[`mystery_${m.id}`] || 0;
+                    const campaignIdentifier = m.id || m.docId;
+                    const taps = individualMysteryTaps[campaignIdentifier] || individualMysteryTaps[`mystery_${campaignIdentifier}`] || 0;
+                    const scans = individualMysteryScans[campaignIdentifier] || individualMysteryScans[`mystery_${campaignIdentifier}`] || 0;
 
                     return (
                       <div key={m.docId} className="bg-slate-900 border border-slate-800 hover:border-slate-700 transition rounded-xl p-5 flex flex-col justify-between space-y-4">
                         <div className="flex items-start justify-between">
                           <div>
                             <span className="text-[10px] font-mono font-bold bg-fuchsia-500/10 text-fuchsia-400 border border-fuchsia-500/20 px-2 py-0.5 rounded">
-                              ID: {m.id}
+                              ID: {campaignIdentifier}
                             </span>
                             <h3 className="text-base font-bold text-white mt-1.5">{m.title}</h3>
                             <p className="text-xs text-slate-400 font-semibold">{m.brand} • Code: <code className="text-emerald-400">{m.couponCode}</code></p>
@@ -1569,19 +1571,19 @@ export default function OperationsPortal() {
                           <div className="flex items-center justify-between text-xs">
                             <span className="text-slate-400">Advertiser Portal URL:</span>
                             <button
-                              onClick={() => copyToClipboard(`${window.location.origin}/mystery/${m.id}`, `mystery_link_${m.id}`)}
+                              onClick={() => copyToClipboard(`${window.location.origin}/mystery/${campaignIdentifier}`, `mystery_link_${campaignIdentifier}`)}
                               className="text-fuchsia-400 hover:text-fuchsia-300 font-semibold flex items-center gap-1"
                             >
-                              {copiedStoreId === `mystery_link_${m.id}` ? "✓ Copied Link" : "Copy Link"}
+                              {copiedStoreId === `mystery_link_${campaignIdentifier}` ? "✓ Copied Link" : "Copy Link"}
                             </button>
                           </div>
                           <p className="text-[11px] font-mono text-slate-300 bg-slate-900 p-1.5 rounded border border-slate-800/80 truncate select-all">
-                            {window.location.origin}/mystery/{m.id}
+                            {window.location.origin}/mystery/{campaignIdentifier}
                           </p>
                           <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1">
                             <span>Client Passcode: <code className="text-fuchsia-400 font-mono font-bold">{m.clientPin || "1234"}</code></span>
                             <a
-                              href={`/mystery/${m.id}`}
+                              href={`/mystery/${campaignIdentifier}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="text-fuchsia-400 hover:text-fuchsia-300 font-semibold underline flex items-center gap-0.5"
@@ -1689,7 +1691,7 @@ export default function OperationsPortal() {
                           </div>
                         )}
 
-                        {/* Advertiser Portal Link & Client PIN Card with Open Portal Button */}
+                        {/* Advertiser Portal Link & Client PIN Card with Copy & Open Portal Button */}
                         <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
                           <div className="flex items-center justify-between text-xs">
                             <span className="text-slate-400">Advertiser Portal URL:</span>

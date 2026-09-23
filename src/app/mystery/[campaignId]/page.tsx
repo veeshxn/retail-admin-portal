@@ -105,13 +105,15 @@ export default function MysteryAdvertiserPortal({
       try {
         let snap = await getDoc(doc(db, "mystery_campaigns", campaignId));
         if (snap.exists()) {
-          setCampaign({ docId: snap.id, ...snap.data() } as MysteryCampaign);
+          const d = snap.data();
+          setCampaign({ docId: snap.id, id: d.id || snap.id, ...d } as MysteryCampaign);
         } else {
           const q = query(collection(db, "mystery_campaigns"), where("id", "==", campaignId));
           const querySnap = await getDocs(q);
           if (!querySnap.empty) {
             const docMatch = querySnap.docs[0];
-            setCampaign({ docId: docMatch.id, ...docMatch.data() } as MysteryCampaign);
+            const d = docMatch.data();
+            setCampaign({ docId: docMatch.id, id: d.id || docMatch.id, ...d } as MysteryCampaign);
           }
         }
       } catch (err) {
@@ -148,7 +150,7 @@ export default function MysteryAdvertiserPortal({
         // Taps for this campaign
         let docTaps = 0;
         if (d.mystery_taps && typeof d.mystery_taps === "object") {
-          docTaps += Number(d.mystery_taps[campaign.id] || d.mystery_taps[`mystery_${campaign.id}`] || 0);
+          docTaps += Number(d.mystery_taps[campaign.id] || d.mystery_taps[campaign.docId] || d.mystery_taps[`mystery_${campaign.id}`] || 0);
         }
         if (d[`mystery_taps.${campaign.id}`]) {
           docTaps += Number(d[`mystery_taps.${campaign.id}`]);
@@ -157,7 +159,7 @@ export default function MysteryAdvertiserPortal({
         // Scans for this campaign
         let docScans = 0;
         if (d.mystery_scans && typeof d.mystery_scans === "object") {
-          docScans += Number(d.mystery_scans[campaign.id] || d.mystery_scans[`mystery_${campaign.id}`] || 0);
+          docScans += Number(d.mystery_scans[campaign.id] || d.mystery_scans[campaign.docId] || d.mystery_scans[`mystery_${campaign.id}`] || 0);
         }
         if (d[`mystery_scans.${campaign.id}`]) {
           docScans += Number(d[`mystery_scans.${campaign.id}`]);
@@ -294,6 +296,7 @@ export default function MysteryAdvertiserPortal({
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans pb-16">
+      {/* Header */}
       <header className="border-b border-slate-800 bg-slate-900/60 backdrop-blur px-6 py-4 flex items-center justify-between sticky top-0 z-30">
         <div className="flex items-center gap-3">
           <div className="p-2 bg-fuchsia-500/10 border border-fuchsia-500/30 rounded-lg text-fuchsia-400">
@@ -326,10 +329,14 @@ export default function MysteryAdvertiserPortal({
         </button>
       </header>
 
+      {/* Main Content */}
       <main className="p-6 max-w-6xl mx-auto space-y-6">
+        {/* KPI Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-            <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Total Box Taps</p>
+            <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+              Total Box Taps
+            </p>
             <p className="text-2xl font-bold mt-1 text-purple-400 flex items-center gap-2 font-mono">
               <Sparkles className="w-5 h-5" />
               {totalBoxTaps.toLocaleString()}
@@ -338,7 +345,9 @@ export default function MysteryAdvertiserPortal({
           </div>
 
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-            <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Coupon QR Scans</p>
+            <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+              Coupon QR Scans
+            </p>
             <p className="text-2xl font-bold mt-1 text-fuchsia-400 flex items-center gap-2 font-mono">
               <QrCode className="w-5 h-5" />
               {totalQrScans.toLocaleString()}
@@ -347,7 +356,9 @@ export default function MysteryAdvertiserPortal({
           </div>
 
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-            <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Conversion Rate</p>
+            <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+              Conversion Rate
+            </p>
             <p className="text-2xl font-bold mt-1 text-emerald-400 flex items-center gap-2 font-mono">
               <Ticket className="w-5 h-5" />
               {conversionRate}%
@@ -356,7 +367,9 @@ export default function MysteryAdvertiserPortal({
           </div>
 
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
-            <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Deployed Kiosks</p>
+            <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+              Deployed Kiosks
+            </p>
             <p className="text-2xl font-bold mt-1 text-white flex items-center gap-2 font-mono">
               <Building2 className="w-5 h-5 text-slate-400" />
               {totalDisplaysCount} Screens
@@ -365,6 +378,7 @@ export default function MysteryAdvertiserPortal({
           </div>
         </div>
 
+        {/* Campaign Info & Reward Card */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
@@ -426,6 +440,7 @@ export default function MysteryAdvertiserPortal({
           </div>
         </div>
 
+        {/* Store Performance Breakdown Table */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-sm">
           <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
             <div className="flex items-center gap-2">
