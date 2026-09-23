@@ -1689,6 +1689,7 @@ export default function OperationsPortal() {
                           </div>
                         )}
 
+                        {/* Advertiser Portal Link & Client PIN Card with Open Portal Button */}
                         <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
                           <div className="flex items-center justify-between text-xs">
                             <span className="text-slate-400">Advertiser Portal URL:</span>
@@ -1702,9 +1703,17 @@ export default function OperationsPortal() {
                           <p className="text-[11px] font-mono text-slate-300 bg-slate-900 p-1.5 rounded border border-slate-800/80 truncate select-all">
                             {window.location.origin}/campaign/ad_{ad.id}
                           </p>
-                          <p className="text-[10px] text-slate-500">
-                            Client Passcode: <code className="text-emerald-400 font-mono font-bold">{ad.clientPin || "1234"}</code>
-                          </p>
+                          <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1">
+                            <span>Client Passcode: <code className="text-emerald-400 font-mono font-bold">{ad.clientPin || "1234"}</code></span>
+                            <a
+                              href={`/campaign/ad_${ad.id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-indigo-400 hover:text-indigo-300 font-semibold underline flex items-center gap-0.5"
+                            >
+                              Open Portal ↗
+                            </a>
+                          </div>
                         </div>
 
                         <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 flex justify-between items-center text-xs">
