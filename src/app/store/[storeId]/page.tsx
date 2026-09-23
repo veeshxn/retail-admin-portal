@@ -30,6 +30,7 @@ import {
   QrCode,
   Gift,
   Film,
+  Sparkles,
 } from "lucide-react";
 
 interface StoreData {
@@ -168,7 +169,7 @@ export default function ShopkeeperPortal({
         if (currentStoreId === storeId) {
           footfallSum += Number(d.total_ble_footfall || 0);
 
-          // 1. Collect commercial ad scans
+          // 1. Collect commercial ad scans (map or flat keys)
           if (d.qr_scans && typeof d.qr_scans === "object") {
             Object.entries(d.qr_scans).forEach(([cid, val]) => {
               const count = Number(val || 0);
@@ -176,8 +177,16 @@ export default function ShopkeeperPortal({
               qrScansSum += count;
             });
           }
+          Object.keys(d).forEach((key) => {
+            if (key.startsWith("qr_scans.") && typeof d[key] === "number") {
+              const cid = key.replace("qr_scans.", "");
+              const count = Number(d[key]);
+              adScansMap[cid] = (adScansMap[cid] || 0) + count;
+              qrScansSum += count;
+            }
+          });
 
-          // 2. Collect surprise box scans
+          // 2. Collect surprise box scans (map or flat keys)
           if (d.mystery_scans && typeof d.mystery_scans === "object") {
             Object.entries(d.mystery_scans).forEach(([cid, val]) => {
               const count = Number(val || 0);
@@ -186,13 +195,29 @@ export default function ShopkeeperPortal({
               qrScansSum += count;
             });
           }
+          Object.keys(d).forEach((key) => {
+            if (key.startsWith("mystery_scans.") && typeof d[key] === "number") {
+              const cleanCid = key.replace("mystery_scans.", "").replace(/^mystery_/, "");
+              const count = Number(d[key]);
+              mysteryScansMap[cleanCid] = (mysteryScansMap[cleanCid] || 0) + count;
+              qrScansSum += count;
+            });
+          });
 
-          // 3. Collect mystery taps
+          // 3. Collect mystery taps (map or flat keys)
           if (d.mystery_taps && typeof d.mystery_taps === "object") {
             Object.entries(d.mystery_taps).forEach(([cid, val]) => {
-              mysteryTapsMap[cid] = (mysteryTapsMap[cid] || 0) + Number(val || 0);
+              const count = Number(val || 0);
+              mysteryTapsMap[cid] = (mysteryTapsMap[cid] || 0) + count;
             });
           }
+          Object.keys(d).forEach((key) => {
+            if (key.startsWith("mystery_taps.") && typeof d[key] === "number") {
+              const cid = key.replace("mystery_taps.", "");
+              const count = Number(d[key]);
+              mysteryTapsMap[cid] = (mysteryTapsMap[cid] || 0) + count;
+            });
+          });
         }
       });
 
@@ -227,7 +252,7 @@ export default function ShopkeeperPortal({
           const data = d.data();
           const mKey = data.id || d.id;
           const scans = mysteryScansMap[mKey] || mysteryScansMap[`mystery_${mKey}`] || 0;
-          const taps = mysteryTapsMap[mKey] || 0;
+          const taps = mysteryTapsMap[mKey] || mysteryTapsMap[`mystery_${mKey}`] || 0;
           items.push({
             id: mKey,
             name: data.title || mKey,
