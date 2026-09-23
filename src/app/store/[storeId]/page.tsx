@@ -169,7 +169,7 @@ export default function ShopkeeperPortal({
         if (currentStoreId === storeId) {
           footfallSum += Number(d.total_ble_footfall || 0);
 
-          // 1. Collect commercial ad scans (map or flat keys)
+          // 1. Collect commercial ad scans (map or flat dot-notation keys)
           if (d.qr_scans && typeof d.qr_scans === "object") {
             Object.entries(d.qr_scans).forEach(([cid, val]) => {
               const count = Number(val || 0);
@@ -186,7 +186,7 @@ export default function ShopkeeperPortal({
             }
           });
 
-          // 2. Collect surprise box scans (map or flat keys)
+          // 2. Collect surprise box scans (map or flat dot-notation keys)
           if (d.mystery_scans && typeof d.mystery_scans === "object") {
             Object.entries(d.mystery_scans).forEach(([cid, val]) => {
               const count = Number(val || 0);
@@ -201,22 +201,23 @@ export default function ShopkeeperPortal({
               const count = Number(d[key]);
               mysteryScansMap[cleanCid] = (mysteryScansMap[cleanCid] || 0) + count;
               qrScansSum += count;
-            });
+            }
           });
 
-          // 3. Collect mystery taps (map or flat keys)
+          // 3. Collect mystery taps (map or flat dot-notation keys)
           if (d.mystery_taps && typeof d.mystery_taps === "object") {
             Object.entries(d.mystery_taps).forEach(([cid, val]) => {
               const count = Number(val || 0);
-              mysteryTapsMap[cid] = (mysteryTapsMap[cid] || 0) + count;
+              const cleanCid = cid.replace(/^mystery_/, "");
+              mysteryTapsMap[cleanCid] = (mysteryTapsMap[cleanCid] || 0) + count;
             });
           }
           Object.keys(d).forEach((key) => {
             if (key.startsWith("mystery_taps.") && typeof d[key] === "number") {
-              const cid = key.replace("mystery_taps.", "");
+              const cleanCid = key.replace("mystery_taps.", "").replace(/^mystery_/, "");
               const count = Number(d[key]);
-              mysteryTapsMap[cid] = (mysteryTapsMap[cid] || 0) + count;
-            });
+              mysteryTapsMap[cleanCid] = (mysteryTapsMap[cleanCid] || 0) + count;
+            }
           });
         }
       });
@@ -251,11 +252,13 @@ export default function ShopkeeperPortal({
         mysterySnap.forEach((d) => {
           const data = d.data();
           const mKey = data.id || d.id;
-          const scans = mysteryScansMap[mKey] || mysteryScansMap[`mystery_${mKey}`] || 0;
-          const taps = mysteryTapsMap[mKey] || mysteryTapsMap[`mystery_${mKey}`] || 0;
+          const cleanMKey = mKey.replace(/^mystery_/, "");
+          const scans = mysteryScansMap[cleanMKey] || mysteryScansMap[`mystery_${cleanMKey}`] || 0;
+          const taps = mysteryTapsMap[cleanMKey] || mysteryTapsMap[`mystery_${cleanMKey}`] || 0;
+
           items.push({
-            id: mKey,
-            name: data.title || mKey,
+            id: cleanMKey,
+            name: data.title || cleanMKey,
             type: "MYSTERY_BOX",
             brand: data.brand || "Surprise Box Sponsor",
             scans: scans,
@@ -703,7 +706,7 @@ export default function ShopkeeperPortal({
               <tbody className="divide-y divide-slate-800/60">
                 {payouts.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-6 py-8 text-center text-slate-500">
+                    <td colSpan5 className="px-6 py-8 text-center text-slate-500">
                       No previous settlement records found.
                     </td>
                   </tr>
