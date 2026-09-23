@@ -1564,6 +1564,33 @@ export default function OperationsPortal() {
                           </div>
                         )}
 
+                        {/* Advertiser Portal Link & Client PIN Card */}
+                        <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
+                          <div className="flex items-center justify-between text-xs">
+                            <span className="text-slate-400">Advertiser Portal URL:</span>
+                            <button
+                              onClick={() => copyToClipboard(`${window.location.origin}/mystery/${m.id}`, `mystery_link_${m.id}`)}
+                              className="text-fuchsia-400 hover:text-fuchsia-300 font-semibold flex items-center gap-1"
+                            >
+                              {copiedStoreId === `mystery_link_${m.id}` ? "✓ Copied Link" : "Copy Link"}
+                            </button>
+                          </div>
+                          <p className="text-[11px] font-mono text-slate-300 bg-slate-900 p-1.5 rounded border border-slate-800/80 truncate select-all">
+                            {window.location.origin}/mystery/{m.id}
+                          </p>
+                          <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1">
+                            <span>Client Passcode: <code className="text-fuchsia-400 font-mono font-bold">{m.clientPin || "1234"}</code></span>
+                            <a
+                              href={`/mystery/${m.id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-fuchsia-400 hover:text-fuchsia-300 font-semibold underline flex items-center gap-0.5"
+                            >
+                              Open Portal ↗
+                            </a>
+                          </div>
+                        </div>
+
                         <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-xs text-slate-400">
                           <span>Fee: ₹{m.contractAmount.toLocaleString()}</span>
                           {isMaster && (

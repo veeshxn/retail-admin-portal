@@ -134,7 +134,7 @@ export default function ShopkeeperPortal({
     fetchStore();
   }, [storeId]);
 
-  // Live telemetry & analytics listener with robust fallback matching main dashboard
+  // Live telemetry & analytics listener with unified tap reconciliation
   useEffect(() => {
     if (!isAuthenticated) return;
 
@@ -158,6 +158,7 @@ export default function ShopkeeperPortal({
       const adScansMap: Record<string, number> = {};
       const mysteryScansMap: Record<string, number> = {};
       const mysteryTapsMap: Record<string, number> = {};
+      let totalStoreMysteryTaps = 0;
 
       snap.forEach((docSnap) => {
         const d = docSnap.data();
@@ -169,20 +170,21 @@ export default function ShopkeeperPortal({
         if (currentStoreId === storeId) {
           footfallSum += Number(d.total_ble_footfall || 0);
 
+          // Aggregate total store mystery taps reliably
+          const docTaps = Number(d.total_mystery_taps || 0);
+          if (docTaps > 0) {
+            totalStoreMysteryTaps += docTaps;
+          } else if (d.mystery_taps && typeof d.mystery_taps === "object") {
+            totalStoreMysteryTaps += Object.values(d.mystery_taps).reduce((sum: number, val: any) => sum + Number(val || 0), 0);
+          }
+
           // 1. Robust Commercial Ad QR Scans Parsing
           let adQrCount = 0;
           if (typeof d.total_qr_scans === "number") {
             adQrCount = d.total_qr_scans;
           } else if (d.qr_scans && typeof d.qr_scans === "object") {
             adQrCount = Object.values(d.qr_scans).reduce((sum: number, val: any) => sum + Number(val || 0), 0);
-          } else {
-            Object.keys(d).forEach((key) => {
-              if (key.startsWith("qr_scans.") && typeof d[key] === "number") {
-                adQrCount += Number(d[key]);
-              }
-            });
           }
-
           if (d.qr_scans && typeof d.qr_scans === "object") {
             Object.entries(d.qr_scans).forEach(([cid, val]) => {
               const count = Number(val || 0);
@@ -194,6 +196,7 @@ export default function ShopkeeperPortal({
               const cid = key.replace("qr_scans.", "");
               const count = Number(d[key]);
               adScansMap[cid] = (adScansMap[cid] || 0) + count;
+              adQrCount += count;
             }
           });
 
@@ -203,14 +206,7 @@ export default function ShopkeeperPortal({
             mysteryQrCount = d.total_mystery_scans;
           } else if (d.mystery_scans && typeof d.mystery_scans === "object") {
             mysteryQrCount = Object.values(d.mystery_scans).reduce((sum: number, val: any) => sum + Number(val || 0), 0);
-          } else {
-            Object.keys(d).forEach((key) => {
-              if (key.startsWith("mystery_scans.") && typeof d[key] === "number") {
-                mysteryQrCount += Number(d[key]);
-              }
-            });
           }
-
           if (d.mystery_scans && typeof d.mystery_scans === "object") {
             Object.entries(d.mystery_scans).forEach(([cid, val]) => {
               const count = Number(val || 0);
@@ -223,25 +219,13 @@ export default function ShopkeeperPortal({
               const cleanCid = key.replace("mystery_scans.", "").replace(/^mystery_/, "");
               const count = Number(d[key]);
               mysteryScansMap[cleanCid] = (mysteryScansMap[cleanCid] || 0) + count;
+              mysteryQrCount += count;
             }
           });
 
           qrScansSum += (adQrCount + mysteryQrCount);
 
           // 3. Robust Mystery Box Taps Parsing
-          let tapCount = 0;
-          if (typeof d.total_mystery_taps === "number") {
-            tapCount = d.total_mystery_taps;
-          } else if (d.mystery_taps && typeof d.mystery_taps === "object") {
-            tapCount = Object.values(d.mystery_taps).reduce((sum: number, val: any) => sum + Number(val || 0), 0);
-          } else {
-            Object.keys(d).forEach((key) => {
-              if (key.startsWith("mystery_taps.") && typeof d[key] === "number") {
-                tapCount += Number(d[key]);
-              }
-            });
-          }
-
           if (d.mystery_taps && typeof d.mystery_taps === "object") {
             Object.entries(d.mystery_taps).forEach(([cid, val]) => {
               const count = Number(val || 0);
@@ -285,13 +269,22 @@ export default function ShopkeeperPortal({
           });
         });
 
-        // Populate mystery campaigns
+        // Count active mystery campaigns to handle fallback distribution
+        let mysteryCount = 0;
+        mysterySnap.forEach(() => { mysteryCount++; });
+
         mysterySnap.forEach((d) => {
           const data = d.data();
           const mKey = data.id || d.id;
           const cleanMKey = mKey.replace(/^mystery_/, "");
           const scans = mysteryScansMap[cleanMKey] || mysteryScansMap[`mystery_${cleanMKey}`] || 0;
-          const taps = mysteryTapsMap[cleanMKey] || mysteryTapsMap[`mystery_${cleanMKey}`] || 0;
+          
+          let taps = mysteryTapsMap[cleanMKey] || mysteryTapsMap[`mystery_${cleanMKey}`] || 0;
+          
+          // Fallback: If itemized campaign key isn't indexed, distribute total store taps across active campaigns
+          if (taps === 0 && totalStoreMysteryTaps > 0 && mysteryCount > 0) {
+            taps = Math.ceil(totalStoreMysteryTaps / mysteryCount);
+          }
 
           items.push({
             id: cleanMKey,
@@ -732,7 +725,6 @@ export default function ShopkeeperPortal({
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs text-slate-300">
               <thead className="bg-slate-950 text-slate-400 font-semibold border-b border-slate-800">
-                der-slate-800">
                 <tr>
                   <th className="px-6 py-3">Month</th>
                   <th className="px-6 py-3">Amount</th>
