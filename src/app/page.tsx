@@ -255,6 +255,15 @@ export default function OperationsPortal() {
   const [mysteryContract, setMysteryContract] = useState<number>(5000);
   const [mysteryPin, setMysteryPin] = useState("1234");
 
+  const [editingMystery, setEditingMystery] = useState<MysteryCampaign | null>(null);
+  const [editMysteryTitle, setEditMysteryTitle] = useState("");
+  const [editMysteryBrand, setEditMysteryBrand] = useState("");
+  const [editMysteryCoupon, setEditMysteryCoupon] = useState("");
+  const [editMysteryDiscount, setEditMysteryDiscount] = useState("");
+  const [editMysteryUrl, setEditMysteryUrl] = useState("");
+  const [editMysteryContract, setEditMysteryContract] = useState<number>(5000);
+  const [editMysteryPin, setEditMysteryPin] = useState("1234");
+
   const [currentMonth, setCurrentMonth] = useState("2026-09");
   const [payouts, setPayouts] = useState<Record<string, PayoutRecord>>({});
   const [payoutModalStore, setPayoutModalStore] = useState<{
@@ -973,6 +982,47 @@ export default function OperationsPortal() {
     }
   };
 
+  const openEditMysteryModal = (m: MysteryCampaign) => {
+    if (!isMaster) return;
+    setEditingMystery(m);
+    setEditMysteryTitle(m.title);
+    setEditMysteryBrand(m.brand);
+    setEditMysteryCoupon(m.couponCode);
+    setEditMysteryDiscount(m.discountText);
+    setEditMysteryUrl(m.actionUrl || "");
+    setEditMysteryContract(m.contractAmount);
+    setEditMysteryPin(m.clientPin || "1234");
+  };
+
+  const handleUpdateMystery = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isMaster || !editingMystery) return;
+
+    try {
+      await setDoc(
+        doc(db, "mystery_campaigns", editingMystery.docId),
+        {
+          title: editMysteryTitle.trim(),
+          brand: editMysteryBrand.trim(),
+          couponCode: editMysteryCoupon.trim().toUpperCase(),
+          discountText: editMysteryDiscount.trim(),
+          actionUrl: editMysteryUrl.trim() || null,
+          contractAmount: Number(editMysteryContract),
+          clientPin: editMysteryPin.trim() || "1234",
+        },
+        { merge: true }
+      );
+
+      await broadcastAdUpdateToFleet();
+
+      setToastMessage(`✓ Updated mystery campaign: ${editMysteryTitle}`);
+      setEditingMystery(null);
+      setTimeout(() => setToastMessage(null), 3000);
+    } catch (err) {
+      console.error("Failed to update mystery campaign:", err);
+    }
+  };
+
   const toggleMysteryActive = async (m: MysteryCampaign) => {
     if (!isMaster) return;
     try {
@@ -1510,9 +1560,14 @@ export default function OperationsPortal() {
                         <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-xs text-slate-400">
                           <span>Fee: ₹{m.contractAmount.toLocaleString()}</span>
                           {isMaster && (
-                            <button onClick={() => handleDeleteMystery(m)} className="text-rose-400 hover:text-rose-300 p-1">
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                            <div className="flex items-center gap-1">
+                              <button onClick={() => openEditMysteryModal(m)} className="px-2.5 py-1 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-fuchsia-400 rounded-lg flex items-center gap-1">
+                                <Pencil className="w-3.5 h-3.5" /> Edit
+                              </button>
+                              <button onClick={() => handleDeleteMystery(m)} className="text-rose-400 hover:text-rose-300 p-1">
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
                           )}
                         </div>
                       </div>
@@ -1955,11 +2010,15 @@ export default function OperationsPortal() {
       {/* MODAL 1: EDIT STORE PROFILE & TERMS */}
       {isMaster && editingStore && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-              <h3 className="text-base font-bold text-white">Edit Store: {editingStore.storeId}</h3>
-              <button onClick={() => setEditingStore(null)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+              <div className="flex items-center gap-2">
+                <Pencil className="w-5 h-5 text-indigo-400" />
+                <h3 className="text-base font-bold text-white">Edit Store: {editingStore.storeId}</h3>
+              </div>
+              <button onClick={() => setEditingStore(null)} className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
             </div>
+
             <form onSubmit={handleUpdateStore} className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -1971,6 +2030,29 @@ export default function OperationsPortal() {
                   <input type="text" value={editStoreOwner} onChange={(e) => setEditStoreOwner(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white" />
                 </div>
               </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Phone</label>
+                  <input type="tel" value={editStorePhone} onChange={(e) => setEditStorePhone(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">City</label>
+                  <input type="text" value={editStoreCity} onChange={(e) => setEditStoreCity(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white" />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Open Time (HH:MM)</label>
+                  <input type="text" value={editStoreOpen} onChange={(e) => setEditStoreOpen(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono" required />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Close Time (HH:MM)</label>
+                  <input type="text" value={editStoreClose} onChange={(e) => setEditStoreClose(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono" required />
+                </div>
+              </div>
+
               <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-3">
                 <label className="block text-xs font-bold text-indigo-400">Agreed Payout Model</label>
                 <div className="grid grid-cols-3 gap-2">
@@ -1978,19 +2060,40 @@ export default function OperationsPortal() {
                   <button type="button" onClick={() => { setEditStoreModel("PER_SCAN"); setEditStoreBaseRent(0); }} className={`py-1.5 px-2 rounded-lg text-xs font-semibold ${editStoreModel === "PER_SCAN" ? "bg-indigo-600 text-white" : "bg-slate-900 text-slate-400"}`}>Per Scan</button>
                   <button type="button" onClick={() => setEditStoreModel("HYBRID")} className={`py-1.5 px-2 rounded-lg text-xs font-semibold ${editStoreModel === "HYBRID" ? "bg-indigo-600 text-white" : "bg-slate-900 text-slate-400"}`}>Hybrid</button>
                 </div>
-                {editStoreModel !== "PER_SCAN" && (
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">Fixed Monthly Rent (₹)</label>
-                    <input type="number" value={editStoreBaseRent} onChange={(e) => setEditStoreBaseRent(Number(e.target.value))} className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono" />
-                  </div>
-                )}
-                {editStoreModel !== "FIXED" && (
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-300 mb-1">Rate / QR Scan (₹)</label>
-                    <input type="number" step="0.01" value={editStoreRateScan} onChange={(e) => setEditStoreRateScan(Number(e.target.value))} className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono" />
-                  </div>
-                )}
+
+                <div className="pt-1">
+                  {editStoreModel === "FIXED" && (
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">Fixed Monthly Rent (₹)</label>
+                      <input type="number" value={editStoreBaseRent} onChange={(e) => setEditStoreBaseRent(Number(e.target.value))} className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono" />
+                    </div>
+                  )}
+                  {editStoreModel === "PER_SCAN" && (
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">Rate / QR Scan (₹)</label>
+                      <input type="number" step="0.01" value={editStoreRateScan} onChange={(e) => setEditStoreRateScan(Number(e.target.value))} className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono" />
+                    </div>
+                  )}
+                  {editStoreModel === "HYBRID" && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-300 mb-1">Base Rent (₹)</label>
+                        <input type="number" value={editStoreBaseRent} onChange={(e) => setEditStoreBaseRent(Number(e.target.value))} className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-300 mb-1">+ Rate / Scan (₹)</label>
+                        <input type="number" step="0.01" value={editStoreRateScan} onChange={(e) => setEditStoreRateScan(Number(e.target.value))} className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Shopkeeper UPI ID</label>
+                  <input type="text" value={editStoreUpi} onChange={(e) => setEditStoreUpi(e.target.value)} className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono" placeholder="shop@upi" />
+                </div>
               </div>
+
               <div className="flex justify-end gap-2 pt-2">
                 <button type="button" onClick={() => setEditingStore(null)} className="px-4 py-2 rounded-lg bg-slate-800 text-xs font-semibold text-slate-300">Cancel</button>
                 <button type="submit" className="px-4 py-2 rounded-lg bg-indigo-600 text-xs font-semibold text-white">Save Store Changes</button>
@@ -2000,19 +2103,54 @@ export default function OperationsPortal() {
         </div>
       )}
 
-      {/* MODAL 2: EDIT CAMPAIGN */}
+      {/* MODAL 2: EDIT AD CAMPAIGN (MASTER ONLY) */}
       {isMaster && editingAd && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-              <h3 className="text-base font-bold text-white">Edit Campaign: Ad #{editingAd.id}</h3>
-              <button onClick={() => setEditingAd(null)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+              <div className="flex items-center gap-2">
+                <Pencil className="w-5 h-5 text-indigo-400" />
+                <h3 className="text-base font-bold text-white">Edit Campaign: Ad #{editingAd.id}</h3>
+              </div>
+              <button onClick={() => setEditingAd(null)} className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
             </div>
+
             <form onSubmit={handleUpdateAd} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">Campaign Title</label>
                 <input type="text" value={editAdTitle} onChange={(e) => setEditAdTitle(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white" required />
               </div>
+
+              <div className="grid grid-cols-2 gap-3 p-3 bg-slate-950 border border-slate-800 rounded-xl">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Billing Structure</label>
+                  <select value={editAdPricingModel} onChange={(e) => setEditAdPricingModel(e.target.value as any)} className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white">
+                    <option value="FLAT_CONTRACT">Flat Contract Retainer</option>
+                    <option value="PER_PLAY">Performance (Per 1k Plays)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">{editAdPricingModel === "FLAT_CONTRACT" ? "Agreed Fee (₹)" : "Rate / 1k Plays (₹)"}</label>
+                  <input type="number" value={editAdContractAmount} onChange={(e) => setEditAdContractAmount(Number(e.target.value))} className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono" required />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Advertiser Portal PIN</label>
+                <input type="text" value={editAdClientPin} onChange={(e) => setEditAdClientPin(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono" required />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Duration (Seconds)</label>
+                  <input type="number" value={editAdDuration} onChange={(e) => setEditAdDuration(parseInt(e.target.value, 10))} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white" required />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Action / QR Target URL</label>
+                  <input type="url" value={editAdActionUrl} onChange={(e) => setEditAdActionUrl(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white" placeholder="https://..." />
+                </div>
+              </div>
+
               <div className="flex justify-end gap-2 pt-2">
                 <button type="button" onClick={() => setEditingAd(null)} className="px-4 py-2 rounded-lg bg-slate-800 text-xs font-semibold text-slate-300">Cancel</button>
                 <button type="submit" className="px-4 py-2 rounded-lg bg-indigo-600 text-xs font-semibold text-white">Save Contract</button>
@@ -2022,12 +2160,66 @@ export default function OperationsPortal() {
         </div>
       )}
 
-      {/* MODAL 3: DISBURSE SETTLEMENT */}
+      {/* MODAL 3: EDIT MYSTERY CAMPAIGN */}
+      {isMaster && editingMystery && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <div className="flex items-center gap-2 text-fuchsia-400 font-bold">
+                <Gift className="w-5 h-5" />
+                <h3 className="text-base text-white">Edit Mystery Campaign: {editingMystery.id}</h3>
+              </div>
+              <button onClick={() => setEditingMystery(null)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+            </div>
+
+            <form onSubmit={handleUpdateMystery} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Campaign Title</label>
+                <input type="text" value={editMysteryTitle} onChange={(e) => setEditMysteryTitle(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white" required />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Brand Name</label>
+                  <input type="text" value={editMysteryBrand} onChange={(e) => setEditMysteryBrand(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white" required />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Coupon Code</label>
+                  <input type="text" value={editMysteryCoupon} onChange={(e) => setEditMysteryCoupon(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono uppercase" required />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Contract Fee (₹)</label>
+                  <input type="number" value={editMysteryContract} onChange={(e) => setEditMysteryContract(Number(e.target.value))} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono" required />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Client PIN</label>
+                  <input type="text" value={editMysteryPin} onChange={(e) => setEditMysteryPin(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono" required />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Target URL</label>
+                <input type="url" value={editMysteryUrl} onChange={(e) => setEditMysteryUrl(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white" placeholder="https://..." />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setEditingMystery(null)} className="px-4 py-2 bg-slate-800 text-xs font-semibold text-slate-300 rounded-lg">Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-fuchsia-600 hover:bg-fuchsia-500 text-xs font-semibold text-white rounded-lg">Save Changes</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 4: DISBURSE SETTLEMENT */}
       {isMaster && payoutModalStore && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-              <h3 className="text-base font-bold text-white">Record Rent Settlement</h3>
+              <div className="flex items-center gap-2">
+                <IndianRupee className="w-5 h-5 text-emerald-400" />
+                <h3 className="text-base font-bold text-white">Record Rent Settlement</h3>
+              </div>
               <button onClick={() => setPayoutModalStore(null)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
             </div>
             <form onSubmit={handleRecordPayout} className="space-y-4">
@@ -2048,7 +2240,7 @@ export default function OperationsPortal() {
         </div>
       )}
 
-      {/* MODAL 4: ONBOARD STORE */}
+      {/* MODAL 5: ONBOARD STORE */}
       {isMaster && newStoreModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
@@ -2080,7 +2272,7 @@ export default function OperationsPortal() {
         </div>
       )}
 
-      {/* MODAL 5: NEW AD CAMPAIGN */}
+      {/* MODAL 6: NEW AD CAMPAIGN */}
       {isMaster && newAdModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
@@ -2106,7 +2298,7 @@ export default function OperationsPortal() {
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1">Client PIN</label>
-                  <input type="text" value={adClientPin} onChange={(e) => setAdClientPin(e.target.value)} placeholder="1234" className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono" required />
+                  <input type="text" value={adClientPin} onChange={(e) => setEditAdClientPin(e.target.value)} placeholder="1234" className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono" required />
                 </div>
               </div>
               <div>
@@ -2122,7 +2314,7 @@ export default function OperationsPortal() {
         </div>
       )}
 
-      {/* MODAL 6: SCREENSHOT EXPANSION */}
+      {/* MODAL 7: SCREENSHOT EXPANSION */}
       {selectedScreenshot && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-3xl w-full p-4 space-y-3">
@@ -2137,7 +2329,7 @@ export default function OperationsPortal() {
         </div>
       )}
 
-      {/* MODAL 7: GLOBAL OTA */}
+      {/* MODAL 8: GLOBAL OTA */}
       {isMaster && otaModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
@@ -2164,7 +2356,7 @@ export default function OperationsPortal() {
         </div>
       )}
 
-      {/* MODAL 8: NEW MYSTERY CAMPAIGN */}
+      {/* MODAL 9: NEW MYSTERY CAMPAIGN */}
       {isMaster && newMysteryModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
