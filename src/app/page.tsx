@@ -1126,10 +1126,14 @@ export default function OperationsPortal() {
   const totalDynamicRentalObligations = stores.reduce((sum, s) => sum + calculateStorePayout(s), 0);
   const totalPaidOut = Object.values(payouts).reduce((sum, p) => (p.status === "PAID" ? sum + p.amount : sum), 0);
 
-  const totalDynamicRevenue =
-    ads.filter((a) => a.isActive).reduce((sum, ad) => sum + ad.contractAmount, 0) +
-    mysteryCampaigns.filter((m) => m.isActive).reduce((sum, m) => sum + m.contractAmount, 0);
+  const totalMysteryRevenue = mysteryCampaigns.filter((m) => m.isActive).reduce((sum, m) => sum + m.contractAmount, 0);
+  const totalAdRevenue = ads.filter((a) => a.isActive).reduce((sum, ad) => {
+    if (ad.pricingModel === "FLAT_CONTRACT") return sum + ad.contractAmount;
+    if (ad.pricingModel === "PER_PLAY") return sum + Math.round((totalFleetImpressions / 1000) * ad.contractAmount);
+    return sum;
+  }, 0);
 
+  const totalDynamicRevenue = totalAdRevenue + totalMysteryRevenue;
   const netEstimatedProfit = totalDynamicRevenue - totalDynamicRentalObligations;
 
   const mapDevices: MapDevice[] = devices.map((d) => ({
@@ -1507,6 +1511,9 @@ export default function OperationsPortal() {
                     <p className="text-xs text-slate-400">Tracks individual Mystery Box taps, scans, and coupon conversions.</p>
                   </div>
                 </div>
+                <div className="text-xs text-slate-400">
+                  Active Contracts Value: <b className="text-fuchsia-400 font-mono text-sm">₹{mysteryCampaigns.filter(m => m.isActive).reduce((sum, m) => sum + m.contractAmount, 0).toLocaleString()}</b>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -1845,13 +1852,24 @@ export default function OperationsPortal() {
                         <tr key={store.storeId} className="hover:bg-slate-800/30 transition">
                           <td className="px-6 py-4 font-mono font-bold text-white flex items-center gap-2">
                             {store.storeId}
-                            <button onClick={() => copyToClipboard(store.storeId, store.storeId)} className="text-slate-500 hover:text-slate-300">
+                            <button onClick={() => copyToClipboard(store.storeId, store.storeId)} title="Copy Store ID" className="text-slate-500 hover:text-slate-300">
                               {copiedStoreId === store.storeId ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                             </button>
                           </td>
                           <td className="px-6 py-4">
                             <p className="font-semibold text-white">{store.storeName}</p>
                             <p className="text-slate-400 text-[11px]">{store.ownerName} • {store.city}</p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <span className="text-slate-500 font-mono text-[10px]">{store.phone}</span>
+                              <a
+                                href={`/store/${store.storeId}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[10px] text-emerald-400 hover:text-emerald-300 font-semibold underline flex items-center gap-0.5"
+                              >
+                                Open Portal ↗
+                              </a>
+                            </div>
                           </td>
                           <td className="px-6 py-4 font-mono text-slate-400">{store.openTime} - {store.closeTime}</td>
                           <td className="px-6 py-4">
@@ -2298,12 +2316,16 @@ export default function OperationsPortal() {
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1">Client PIN</label>
-                  <input type="text" value={adClientPin} onChange={(e) => setEditAdClientPin(e.target.value)} placeholder="1234" className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono" required />
+                  <input type="text" value={adClientPin} onChange={(e) => setAdClientPin(e.target.value)} placeholder="1234" className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono" required />
                 </div>
               </div>
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Upload MP4 Video</label>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Upload MP4 Video File</label>
                 <input type="file" accept="video/mp4" onChange={(e) => setVideoFile(e.target.files?.[0] || null)} className="w-full text-xs text-slate-400 file:mr-3 file:py-1 file:px-2.5 file:rounded-md file:border-0 file:bg-indigo-600 file:text-white" />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Or Direct Video URL (Optional fallback)</label>
+                <input type="url" value={adVideoUrl} onChange={(e) => setAdVideoUrl(e.target.value)} placeholder="https://.../video.mp4" className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white" />
               </div>
               <div className="flex justify-end gap-2 pt-2">
                 <button type="button" onClick={() => setNewAdModal(false)} className="px-4 py-2 rounded-lg bg-slate-800 text-xs font-semibold text-slate-300">Cancel</button>
