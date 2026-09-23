@@ -26,6 +26,7 @@ import {
   Lock,
   Phone,
   Calendar,
+  QrCode,
 } from "lucide-react";
 
 interface StoreData {
@@ -36,8 +37,9 @@ interface StoreData {
   city: string;
   openTime: string;
   closeTime: string;
-  payoutModel: "FIXED" | "PERFORMANCE" | "HYBRID";
+  payoutModel: "FIXED" | "PER_SCAN" | "HYBRID" | "PERFORMANCE";
   baseRent: number;
+  ratePerScan?: number;
   ratePerFootfall?: number;
   upiId?: string;
   portalPin?: string;
@@ -76,6 +78,7 @@ export default function ShopkeeperPortal({
   const [store, setStore] = useState<StoreData | null>(null);
   const [telemetry, setTelemetry] = useState<DeviceTelemetry | null>(null);
   const [monthlyFootfall, setMonthlyFootfall] = useState(0);
+  const [monthlyQrScans, setMonthlyQrScans] = useState(0);
   const [payouts, setPayouts] = useState<PayoutRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [wifiHelpOpen, setWifiHelpOpen] = useState(false);
@@ -116,7 +119,7 @@ export default function ShopkeeperPortal({
     fetchStore();
   }, [storeId]);
 
-  // Live telemetry listener (only runs after unlocking)
+  // Live telemetry & analytics listener
   useEffect(() => {
     if (!isAuthenticated) return;
 
@@ -135,13 +138,29 @@ export default function ShopkeeperPortal({
 
     const unsubImpressions = onSnapshot(collection(db, "daily_impressions"), (snap) => {
       let footfallSum = 0;
+      let qrScansSum = 0;
+
       snap.forEach((docSnap) => {
         const d = docSnap.data();
-        if (d.storeId === storeId) {
+        let currentStoreId = d.storeId;
+        if (!currentStoreId && docSnap.id.includes("_")) {
+          currentStoreId = docSnap.id.substring(docSnap.id.indexOf("_") + 1);
+        }
+
+        if (currentStoreId === storeId) {
           footfallSum += Number(d.total_ble_footfall || 0);
+
+          if (d.qr_scans && typeof d.qr_scans === "object") {
+            qrScansSum += Object.values(d.qr_scans).reduce((sum: number, val: any) => sum + Number(val || 0), 0);
+          }
+          if (d.mystery_scans && typeof d.mystery_scans === "object") {
+            qrScansSum += Object.values(d.mystery_scans).reduce((sum: number, val: any) => sum + Number(val || 0), 0);
+          }
         }
       });
+
       setMonthlyFootfall(footfallSum);
+      setMonthlyQrScans(qrScansSum);
     });
 
     const unsubPayouts = onSnapshot(collection(db, "payouts"), (snap) => {
@@ -157,13 +176,10 @@ export default function ShopkeeperPortal({
     });
 
     return () => {
-      unsubTest();
+      unsubDevice();
       unsubImpressions();
       unsubPayouts();
     };
-    function unsubTest() {
-      unsubDevice();
-    }
   }, [isAuthenticated, storeId]);
 
   const handleLogin = (e: React.FormEvent) => {
@@ -211,14 +227,17 @@ export default function ShopkeeperPortal({
     }
   };
 
+  // CHANGE 1: Calculate Shopkeeper Rent based on Verified QR Scans (not footfall)
   const calculateCurrentRent = (): number => {
     if (!store) return 0;
+    const rate = store.ratePerScan ?? store.ratePerFootfall ?? 2.00;
+
     if (store.payoutModel === "FIXED") return store.baseRent;
-    if (store.payoutModel === "PERFORMANCE") {
-      return Math.round(monthlyFootfall * (store.ratePerFootfall || 0.1));
+    if (store.payoutModel === "PER_SCAN" || store.payoutModel === "PERFORMANCE") {
+      return Math.round(monthlyQrScans * rate);
     }
     if (store.payoutModel === "HYBRID") {
-      return Math.round(store.baseRent + monthlyFootfall * (store.ratePerFootfall || 0.1));
+      return Math.round(store.baseRent + monthlyQrScans * rate);
     }
     return store.baseRent;
   };
@@ -386,7 +405,7 @@ export default function ShopkeeperPortal({
           </div>
         )}
 
-        {/* Current Month Rent & Footfall Cards */}
+        {/* CHANGE 1: Current Month Rent & Verified QR Scans Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
             <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">
@@ -397,19 +416,19 @@ export default function ShopkeeperPortal({
               {currentMonth}
             </p>
             <p className="text-[11px] text-slate-500 mt-1 capitalize">
-              Terms: {store.payoutModel.toLowerCase()}
+              Terms: {store.payoutModel === "PER_SCAN" || store.payoutModel === "PERFORMANCE" ? "Per Scan" : store.payoutModel.toLowerCase()}
             </p>
           </div>
 
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
             <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-              Store Footfall (BLE)
+              Verified QR Scans
             </p>
-            <p className="text-xl font-bold mt-1 text-indigo-400 flex items-center gap-2">
-              <Users className="w-5 h-5 text-indigo-400" />
-              {monthlyFootfall.toLocaleString()}
+            <p className="text-xl font-bold mt-1 text-emerald-400 flex items-center gap-2 font-mono">
+              <QrCode className="w-5 h-5 text-emerald-400" />
+              {monthlyQrScans.toLocaleString()}
             </p>
-            <p className="text-[11px] text-slate-500 mt-1">Verified visitor traffic</p>
+            <p className="text-[11px] text-slate-500 mt-1">{monthlyFootfall.toLocaleString()} verified store footfall</p>
           </div>
 
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">

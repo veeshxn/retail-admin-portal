@@ -49,6 +49,7 @@ import {
   Lock,
   ShieldCheck,
   MapPin,
+  QrCode,
 } from "lucide-react";
 import type { MapDevice } from "@/components/FleetMap";
 
@@ -91,8 +92,9 @@ interface StoreRecord {
   city: string;
   openTime: string;
   closeTime: string;
-  payoutModel: "FIXED" | "PERFORMANCE" | "HYBRID";
+  payoutModel: "FIXED" | "PER_SCAN" | "HYBRID" | "PERFORMANCE";
   baseRent: number;
+  ratePerScan?: number;
   ratePerFootfall?: number;
   upiId?: string;
   createdAt: number;
@@ -124,6 +126,9 @@ interface DailyMetrics {
   total_impressions: number;
   total_ble_footfall: number;
   total_mystery_taps: number;
+  total_qr_scans: number;
+  ad_qr_scans: number;
+  mystery_qr_scans: number;
 }
 
 interface PayoutRecord {
@@ -182,9 +187,9 @@ export default function OperationsPortal() {
   const [formCity, setFormCity] = useState("Ludhiana");
   const [formOpenTime, setFormOpenTime] = useState("09:00");
   const [formCloseTime, setFormCloseTime] = useState("21:30");
-  const [formPayoutModel, setFormPayoutModel] = useState<"FIXED" | "PERFORMANCE" | "HYBRID">("FIXED");
+  const [formPayoutModel, setFormPayoutModel] = useState<"FIXED" | "PER_SCAN" | "HYBRID">("FIXED");
   const [formBaseRent, setFormBaseRent] = useState<number>(2000);
-  const [formRatePerFootfall, setFormRatePerFootfall] = useState<number>(0.10);
+  const [formRatePerScan, setFormRatePerScan] = useState<number>(2.00);
   const [formUpiId, setFormUpiId] = useState("");
 
   const [editingStore, setEditingStore] = useState<StoreRecord | null>(null);
@@ -194,9 +199,9 @@ export default function OperationsPortal() {
   const [editStoreCity, setEditStoreCity] = useState("");
   const [editStoreOpen, setEditStoreOpen] = useState("");
   const [editStoreClose, setEditStoreClose] = useState("");
-  const [editStoreModel, setEditStoreModel] = useState<"FIXED" | "PERFORMANCE" | "HYBRID">("FIXED");
+  const [editStoreModel, setEditStoreModel] = useState<"FIXED" | "PER_SCAN" | "HYBRID">("FIXED");
   const [editStoreBaseRent, setEditStoreBaseRent] = useState<number>(2000);
-  const [editStoreRateFootfall, setEditStoreRateFootfall] = useState<number>(0.10);
+  const [editStoreRateScan, setEditStoreRateScan] = useState<number>(2.00);
   const [editStoreUpi, setEditStoreUpi] = useState("");
 
   const [ads, setAds] = useState<ActiveAd[]>([]);
@@ -302,7 +307,7 @@ export default function OperationsPortal() {
     return () => unsubscribe();
   }, [adminRole]);
 
-  // Daily impressions listener
+  // Robust Daily Impressions listener: Aggregates both Ad QR Scans and Surprise Box QR Scans
   useEffect(() => {
     if (!adminRole) return;
     const unsubscribe = onSnapshot(collection(db, "daily_impressions"), (snapshot) => {
@@ -310,7 +315,12 @@ export default function OperationsPortal() {
 
       snapshot.forEach((docSnap) => {
         const data = docSnap.data();
-        const storeId = data.storeId;
+
+        // Safe storeId resolution with doc ID fallback
+        let storeId = data.storeId;
+        if (!storeId && docSnap.id.includes("_")) {
+          storeId = docSnap.id.substring(docSnap.id.indexOf("_") + 1);
+        }
         if (!storeId) return;
 
         if (!metrics[storeId]) {
@@ -318,12 +328,52 @@ export default function OperationsPortal() {
             total_impressions: 0,
             total_ble_footfall: 0,
             total_mystery_taps: 0,
+            total_qr_scans: 0,
+            ad_qr_scans: 0,
+            mystery_qr_scans: 0,
           };
         }
 
         metrics[storeId].total_impressions += Number(data.total_impressions || 0);
         metrics[storeId].total_ble_footfall += Number(data.total_ble_footfall || 0);
-        metrics[storeId].total_mystery_taps += Number(data.total_mystery_taps || 0);
+
+        // Parse Mystery Box Taps (handling nested maps, flat keys, and top-level numbers)
+        let tapCount = Number(data.total_mystery_taps || 0);
+        if (data.mystery_taps && typeof data.mystery_taps === "object") {
+          tapCount += Object.values(data.mystery_taps).reduce((sum: number, val: any) => sum + Number(val || 0), 0);
+        }
+        Object.keys(data).forEach((key) => {
+          if (key.startsWith("mystery_taps.") && typeof data[key] === "number") {
+            tapCount += Number(data[key]);
+          }
+        });
+        metrics[storeId].total_mystery_taps += tapCount;
+
+        // 1. Parse Commercial Ad QR Scans (qr_scans)
+        let adQrCount = 0;
+        if (data.qr_scans && typeof data.qr_scans === "object") {
+          adQrCount += Object.values(data.qr_scans).reduce((sum: number, val: any) => sum + Number(val || 0), 0);
+        }
+        Object.keys(data).forEach((key) => {
+          if (key.startsWith("qr_scans.") && typeof data[key] === "number") {
+            adQrCount += Number(data[key]);
+          }
+        });
+
+        // 2. Parse Surprise Box / Coupon QR Scans (mystery_scans)
+        let mysteryQrCount = 0;
+        if (data.mystery_scans && typeof data.mystery_scans === "object") {
+          mysteryQrCount += Object.values(data.mystery_scans).reduce((sum: number, val: any) => sum + Number(val || 0), 0);
+        }
+        Object.keys(data).forEach((key) => {
+          if (key.startsWith("mystery_scans.") && typeof data[key] === "number") {
+            mysteryQrCount += Number(data[key]);
+          }
+        });
+
+        metrics[storeId].ad_qr_scans += adQrCount;
+        metrics[storeId].mystery_qr_scans += mysteryQrCount;
+        metrics[storeId].total_qr_scans += (adQrCount + mysteryQrCount);
       });
 
       setAnalyticsMap(metrics);
@@ -338,6 +388,9 @@ export default function OperationsPortal() {
       const items: StoreRecord[] = [];
       snapshot.forEach((docSnap) => {
         const d = docSnap.data();
+        const rawModel = d.payoutModel || "FIXED";
+        const normalizedModel = rawModel === "PERFORMANCE" ? "PER_SCAN" : rawModel;
+
         items.push({
           ...d,
           storeId: docSnap.id,
@@ -347,9 +400,9 @@ export default function OperationsPortal() {
           city: d.city || "Ludhiana",
           openTime: d.openTime || "09:00",
           closeTime: d.closeTime || "21:30",
-          payoutModel: d.payoutModel || "FIXED",
-          baseRent: Number(d.baseRent ?? d.monthlyRent ?? 2500),
-          ratePerFootfall: Number(d.ratePerFootfall ?? 0.10),
+          payoutModel: normalizedModel,
+          baseRent: Number(d.baseRent ?? d.monthlyRent ?? 2000),
+          ratePerScan: Number(d.ratePerScan ?? d.ratePerFootfall ?? 2.00),
           upiId: d.upiId || "",
           createdAt: d.createdAt || Date.now(),
         } as StoreRecord);
@@ -567,6 +620,7 @@ export default function OperationsPortal() {
     }
   };
 
+  // CHANGE 1: Onboard Store with Flat, Per Scan, and Hybrid (Per Scan + Base)
   const handleCreateStore = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isMaster) return;
@@ -583,8 +637,9 @@ export default function OperationsPortal() {
         openTime: formOpenTime.trim() || "09:00",
         closeTime: formCloseTime.trim() || "21:30",
         payoutModel: formPayoutModel,
-        baseRent: formPayoutModel === "PERFORMANCE" ? 0 : Number(formBaseRent) || 0,
-        ratePerFootfall: formPayoutModel === "FIXED" ? 0 : Number(formRatePerFootfall) || 0,
+        baseRent: formPayoutModel === "PER_SCAN" ? 0 : Number(formBaseRent) || 0,
+        ratePerScan: formPayoutModel === "FIXED" ? 0 : Number(formRatePerScan) || 0,
+        ratePerFootfall: 0,
         upiId: formUpiId.trim() || "",
         createdAt: Date.now(),
       };
@@ -612,9 +667,9 @@ export default function OperationsPortal() {
     setEditStoreCity(store.city);
     setEditStoreOpen(store.openTime);
     setEditStoreClose(store.closeTime);
-    setEditStoreModel(store.payoutModel);
+    setEditStoreModel(store.payoutModel === "PERFORMANCE" ? "PER_SCAN" : store.payoutModel);
     setEditStoreBaseRent(store.baseRent);
-    setEditStoreRateFootfall(store.ratePerFootfall ?? 0.10);
+    setEditStoreRateScan(store.ratePerScan ?? store.ratePerFootfall ?? 2.00);
     setEditStoreUpi(store.upiId ?? "");
   };
 
@@ -631,8 +686,9 @@ export default function OperationsPortal() {
         openTime: editStoreOpen.trim(),
         closeTime: editStoreClose.trim(),
         payoutModel: editStoreModel,
-        baseRent: editStoreModel === "PERFORMANCE" ? 0 : Number(editStoreBaseRent),
-        ratePerFootfall: editStoreModel === "FIXED" ? 0 : Number(editStoreRateFootfall),
+        baseRent: editStoreModel === "PER_SCAN" ? 0 : Number(editStoreBaseRent),
+        ratePerScan: editStoreModel === "FIXED" ? 0 : Number(editStoreRateScan),
+        ratePerFootfall: 0,
         upiId: editStoreUpi.trim(),
       };
 
@@ -796,16 +852,19 @@ export default function OperationsPortal() {
     }
   };
 
+  // CHANGE 1: Calculate Shopkeeper Payout based on QR Scans (not footfall)
   const calculateStorePayout = (store: StoreRecord): number => {
-    const footfall = analyticsMap[store.storeId]?.total_ble_footfall || 0;
+    const totalScans = analyticsMap[store.storeId]?.total_qr_scans || 0;
+    const rate = store.ratePerScan ?? store.ratePerFootfall ?? 2.00;
+
     if (store.payoutModel === "FIXED") {
       return store.baseRent;
     }
-    if (store.payoutModel === "PERFORMANCE") {
-      return Math.round(footfall * (store.ratePerFootfall || 0.10));
+    if (store.payoutModel === "PER_SCAN" || store.payoutModel === "PERFORMANCE") {
+      return Math.round(totalScans * rate);
     }
     if (store.payoutModel === "HYBRID") {
-      return Math.round(store.baseRent + footfall * (store.ratePerFootfall || 0.10));
+      return Math.round(store.baseRent + totalScans * rate);
     }
     return store.baseRent;
   };
@@ -859,6 +918,18 @@ export default function OperationsPortal() {
     (sum, m) => sum + m.total_impressions,
     0
   );
+  const totalFleetQrScans = Object.values(analyticsMap).reduce(
+    (sum, m) => sum + m.total_qr_scans,
+    0
+  );
+  const totalFleetAdQr = Object.values(analyticsMap).reduce(
+    (sum, m) => sum + m.ad_qr_scans,
+    0
+  );
+  const totalFleetMysteryQr = Object.values(analyticsMap).reduce(
+    (sum, m) => sum + m.mystery_qr_scans,
+    0
+  );
 
   const totalDynamicRentalObligations = stores.reduce(
     (sum, s) => sum + calculateStorePayout(s),
@@ -893,6 +964,9 @@ export default function OperationsPortal() {
     store_close_time: d.store_close_time,
     footfall: analyticsMap[d.storeId]?.total_ble_footfall || 0,
     impressions: analyticsMap[d.storeId]?.total_impressions || 0,
+    qrScans: analyticsMap[d.storeId]?.total_qr_scans || 0,
+    adQrScans: analyticsMap[d.storeId]?.ad_qr_scans || 0,
+    mysteryQrScans: analyticsMap[d.storeId]?.mystery_qr_scans || 0,
   }));
 
   if (isAuthChecking) {
@@ -1103,7 +1177,8 @@ export default function OperationsPortal() {
           <>
             {showMap && <FleetMap devices={mapDevices} />}
 
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+            {/* CHANGE 2: 5 Top KPI Summary Cards including Verified QR Scans */}
+            <div className="grid grid-cols-1 sm:grid-cols-5 gap-4">
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
                 <div>
                   <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">
@@ -1149,6 +1224,21 @@ export default function OperationsPortal() {
                 </div>
                 <Eye className="w-8 h-8 text-amber-500/30" />
               </div>
+
+              <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">
+                    Total QR Scans
+                  </p>
+                  <p className="text-2xl font-bold mt-1 text-emerald-400">
+                    {totalFleetQrScans.toLocaleString()}
+                  </p>
+                  <p className="text-[10px] text-slate-500 mt-0.5">
+                    {totalFleetAdQr} Ad • {totalFleetMysteryQr} Surprise
+                  </p>
+                </div>
+                <QrCode className="w-8 h-8 text-emerald-500/30" />
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -1159,6 +1249,9 @@ export default function OperationsPortal() {
                   total_impressions: 0,
                   total_ble_footfall: 0,
                   total_mystery_taps: 0,
+                  total_qr_scans: 0,
+                  ad_qr_scans: 0,
+                  mystery_qr_scans: 0,
                 };
 
                 return (
@@ -1210,12 +1303,37 @@ export default function OperationsPortal() {
                       </div>
                     </div>
 
-                    {metrics.total_mystery_taps > 0 && (
-                      <div className="flex items-center gap-1.5 text-[11px] text-purple-400 bg-purple-500/10 border border-purple-500/20 px-2.5 py-1 rounded-md">
-                        <Sparkles className="w-3.5 h-3.5" />
-                        <span>{metrics.total_mystery_taps} Interactive Screen Taps</span>
+                    {/* CHANGE 2: Prominently displaying BOTH QR Code Scans & Surprise Screen Taps */}
+                    <div className="space-y-1.5">
+                      {/* 1. Commercial Ad QR Scans */}
+                      <div className="flex items-center justify-between text-[11px] text-sky-400 bg-sky-500/10 border border-sky-500/20 px-2.5 py-1 rounded-md">
+                        <div className="flex items-center gap-1.5">
+                          <QrCode className="w-3.5 h-3.5" />
+                          <span>Commercial Ad QR Scans</span>
+                        </div>
+                        <span className="font-mono font-bold">{metrics.ad_qr_scans}</span>
                       </div>
-                    )}
+
+                      {/* 2. Surprise Box / Coupon QR Scans */}
+                      <div className="flex items-center justify-between text-[11px] text-fuchsia-400 bg-fuchsia-500/10 border border-fuchsia-500/20 px-2.5 py-1 rounded-md">
+                        <div className="flex items-center gap-1.5">
+                          <QrCode className="w-3.5 h-3.5" />
+                          <span>Surprise Box QR Scans</span>
+                        </div>
+                        <span className="font-mono font-bold">{metrics.mystery_qr_scans}</span>
+                      </div>
+
+                      {/* 3. Interactive Mystery Box Screen Taps */}
+                      {metrics.total_mystery_taps > 0 && (
+                        <div className="flex items-center justify-between text-[11px] text-purple-400 bg-purple-500/10 border border-purple-500/20 px-2.5 py-1 rounded-md">
+                          <div className="flex items-center gap-1.5">
+                            <Sparkles className="w-3.5 h-3.5" />
+                            <span>Interactive Screen Taps</span>
+                          </div>
+                          <span className="font-mono font-bold">{metrics.total_mystery_taps}</span>
+                        </div>
+                      )}
+                    </div>
 
                     {device.last_screenshot_base64 && (
                       <div className="space-y-1">
@@ -1375,7 +1493,6 @@ export default function OperationsPortal() {
                       </div>
                     )}
 
-                    {/* Advertiser Portal Link Card */}
                     <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
                       <div className="flex items-center justify-between text-xs">
                         <span className="text-slate-400">Advertiser Portal URL:</span>
@@ -1453,7 +1570,6 @@ export default function OperationsPortal() {
                 </div>
 
                 <form onSubmit={handleSaveConfig} className="space-y-4">
-                  {/* Row 1: Tablet Hardware Security */}
                   <div>
                     <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-2">
                       📱 In-Store Tablet Hardware PINs
@@ -1507,7 +1623,6 @@ export default function OperationsPortal() {
                     </div>
                   </div>
 
-                  {/* Row 2: Web Dashboard Access Credentials */}
                   <div className="pt-3 border-t border-slate-800/80">
                     <h3 className="text-xs font-bold text-emerald-400 uppercase tracking-wider mb-2">
                       🌐 Web Portal Passcodes
@@ -1575,7 +1690,7 @@ export default function OperationsPortal() {
                       <th className="px-6 py-3">Business &amp; Owner</th>
                       <th className="px-6 py-3">Hours</th>
                       <th className="px-6 py-3">Agreed Terms</th>
-                      <th className="px-6 py-3">Footfall</th>
+                      <th className="px-6 py-3">Total QR Scans</th>
                       <th className="px-6 py-3">Est. Rent This Mo</th>
                       <th className="px-6 py-3">Hardware Link</th>
                       {isMaster && <th className="px-6 py-3 text-right">Actions</th>}
@@ -1594,7 +1709,11 @@ export default function OperationsPortal() {
                         const isPaired = !!pairedDevice;
                         const isOnline = pairedDevice?.status === "ONLINE";
                         const dynamicRent = calculateStorePayout(store);
-                        const footfall = analyticsMap[store.storeId]?.total_ble_footfall || 0;
+                        const storeMetrics = analyticsMap[store.storeId] || {
+                          total_qr_scans: 0,
+                          ad_qr_scans: 0,
+                          mystery_qr_scans: 0,
+                        };
 
                         return (
                           <tr key={store.storeId} className="hover:bg-slate-800/30 transition">
@@ -1631,16 +1750,23 @@ export default function OperationsPortal() {
                               {store.openTime} - {store.closeTime}
                             </td>
 
+                            {/* CHANGE 1: Display Flat, Per Scan, or Hybrid */}
                             <td className="px-6 py-4">
                               <span className="inline-block px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-800 text-slate-300 border border-slate-700">
                                 {store.payoutModel === "FIXED" && `Flat ₹${store.baseRent.toLocaleString()}`}
-                                {store.payoutModel === "PERFORMANCE" && `₹${store.ratePerFootfall}/footfall`}
-                                {store.payoutModel === "HYBRID" && `₹${store.baseRent} base + ₹${store.ratePerFootfall}/p`}
+                                {(store.payoutModel === "PER_SCAN" || store.payoutModel === "PERFORMANCE") && `₹${store.ratePerScan || 2}/scan`}
+                                {store.payoutModel === "HYBRID" && `₹${store.baseRent} base + ₹${store.ratePerScan || 2}/scan`}
                               </span>
                             </td>
 
-                            <td className="px-6 py-4 font-mono text-indigo-400 font-semibold">
-                              {footfall.toLocaleString()}
+                            {/* CHANGE 2: Display QR scans count with breakdown */}
+                            <td className="px-6 py-4">
+                              <span className="font-mono font-bold text-emerald-400">
+                                {storeMetrics.total_qr_scans.toLocaleString()}
+                              </span>
+                              <p className="text-[10px] text-slate-500 font-mono mt-0.5">
+                                {storeMetrics.ad_qr_scans} Ad • {storeMetrics.mystery_qr_scans} Surprise
+                              </p>
                             </td>
 
                             <td className="px-6 py-4 font-bold text-emerald-400 font-mono text-sm">
@@ -1779,7 +1905,7 @@ export default function OperationsPortal() {
                       <th className="px-6 py-3">Store Location</th>
                       <th className="px-6 py-3">Payment Info (UPI)</th>
                       <th className="px-6 py-3">Agreement Model</th>
-                      <th className="px-6 py-3">Footfall / Baseline</th>
+                      <th className="px-6 py-3">Verified QR Scans</th>
                       <th className="px-6 py-3">Calculated Rent</th>
                       <th className="px-6 py-3">Settlement</th>
                       {isMaster && <th className="px-6 py-3 text-right">Action</th>}
@@ -1797,7 +1923,11 @@ export default function OperationsPortal() {
                         const payout = payouts[store.storeId];
                         const isPaid = payout?.status === "PAID";
                         const dynamicAmount = calculateStorePayout(store);
-                        const footfall = analyticsMap[store.storeId]?.total_ble_footfall || 0;
+                        const storeMetrics = analyticsMap[store.storeId] || {
+                          total_qr_scans: 0,
+                          ad_qr_scans: 0,
+                          mystery_qr_scans: 0,
+                        };
 
                         return (
                           <tr key={store.storeId} className="hover:bg-slate-800/30 transition">
@@ -1819,7 +1949,11 @@ export default function OperationsPortal() {
                             <td className="px-6 py-4">
                               <div className="flex items-center gap-1.5">
                                 <span className="text-[11px] text-slate-300 font-semibold">
-                                  {store.payoutModel}
+                                  {store.payoutModel === "PER_SCAN" || store.payoutModel === "PERFORMANCE"
+                                    ? "Per Scan"
+                                    : store.payoutModel === "HYBRID"
+                                    ? "Hybrid"
+                                    : "Flat Monthly"}
                                 </span>
                                 {isMaster && (
                                   <button
@@ -1833,8 +1967,8 @@ export default function OperationsPortal() {
                               </div>
                             </td>
 
-                            <td className="px-6 py-4 font-mono text-slate-400">
-                              {footfall.toLocaleString()} passerby
+                            <td className="px-6 py-4 font-mono text-emerald-400 font-semibold">
+                              {storeMetrics.total_qr_scans.toLocaleString()} scans
                             </td>
 
                             <td className="px-6 py-4 font-bold text-emerald-400 text-sm font-mono">
@@ -1978,6 +2112,7 @@ export default function OperationsPortal() {
                 </div>
               </div>
 
+              {/* CHANGE 1: Edit Agreed Payout Model based on Scans */}
               <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-3">
                 <label className="block text-xs font-bold text-indigo-400">
                   Agreed Payout Model
@@ -1987,7 +2122,7 @@ export default function OperationsPortal() {
                     type="button"
                     onClick={() => {
                       setEditStoreModel("FIXED");
-                      setEditStoreRateFootfall(0);
+                      setEditStoreRateScan(0);
                     }}
                     className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition border ${
                       editStoreModel === "FIXED"
@@ -2000,16 +2135,16 @@ export default function OperationsPortal() {
                   <button
                     type="button"
                     onClick={() => {
-                      setEditStoreModel("PERFORMANCE");
+                      setEditStoreModel("PER_SCAN");
                       setEditStoreBaseRent(0);
                     }}
                     className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition border ${
-                      editStoreModel === "PERFORMANCE"
+                      editStoreModel === "PER_SCAN"
                         ? "bg-indigo-600 text-white border-indigo-500"
                         : "bg-slate-900 text-slate-400 border-slate-800"
                     }`}
                   >
-                    Per Footfall
+                    Per Scan
                   </button>
                   <button
                     type="button"
@@ -2035,27 +2170,27 @@ export default function OperationsPortal() {
                         value={editStoreBaseRent}
                         onChange={(e) => setEditStoreBaseRent(Number(e.target.value))}
                         className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono focus:outline-none focus:border-indigo-500"
-                        placeholder="2500"
+                        placeholder="2000"
                       />
-                      <p className="text-[11px] text-slate-500 mt-1">Flat fixed monthly rent regardless of passerby traffic.</p>
+                      <p className="text-[11px] text-slate-500 mt-1">Flat fixed monthly rent regardless of visitor scans.</p>
                     </div>
                   )}
 
-                  {editStoreModel === "PERFORMANCE" && (
+                  {editStoreModel === "PER_SCAN" && (
                     <div>
                       <label className="block text-xs font-semibold text-slate-300 mb-1">
-                        Rate / Footfall (₹)
+                        Rate / QR Scan (₹)
                       </label>
                       <input
                         type="number"
                         step="0.01"
-                        value={editStoreRateFootfall}
-                        onChange={(e) => setEditStoreRateFootfall(Number(e.target.value))}
+                        value={editStoreRateScan}
+                        onChange={(e) => setEditStoreRateScan(Number(e.target.value))}
                         className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono focus:outline-none focus:border-indigo-500"
-                        placeholder="0.10"
+                        placeholder="2.00"
                       />
                       <p className="text-[11px] text-slate-500 mt-1">
-                        Pure performance. Payout = Total Footfall × Rate. No base rent.
+                        Performance payout based entirely on audience QR code scans. No base rent.
                       </p>
                     </div>
                   )}
@@ -2077,15 +2212,15 @@ export default function OperationsPortal() {
 
                       <div>
                         <label className="block text-xs font-semibold text-slate-300 mb-1">
-                          + Bonus / Footfall (₹)
+                          + Bonus / QR Scan (₹)
                         </label>
                         <input
                           type="number"
                           step="0.01"
-                          value={editStoreRateFootfall}
-                          onChange={(e) => setEditStoreRateFootfall(Number(e.target.value))}
+                          value={editStoreRateScan}
+                          onChange={(e) => setEditStoreRateScan(Number(e.target.value))}
                           className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono focus:outline-none focus:border-indigo-500"
-                          placeholder="0.05"
+                          placeholder="1.00"
                         />
                       </div>
                     </div>
@@ -2258,7 +2393,7 @@ export default function OperationsPortal() {
                 <p className="text-sm font-bold text-white">{payoutModalStore.store.storeName} ({payoutModalStore.store.ownerName})</p>
                 <p className="text-xs text-slate-400 font-mono">UPI: {payoutModalStore.store.upiId || "None provided"}</p>
                 <p className="text-[11px] text-slate-500 mt-1">
-                  Formula Calculated: ₹{payoutModalStore.calculatedAmount.toLocaleString()} ({payoutModalStore.store.payoutModel})
+                  Formula Calculated: ₹{payoutModalStore.calculatedAmount.toLocaleString()} ({payoutModalStore.store.payoutModel === "PER_SCAN" ? "Per Scan" : payoutModalStore.store.payoutModel})
                 </p>
               </div>
 
@@ -2430,6 +2565,7 @@ export default function OperationsPortal() {
                 </div>
               </div>
 
+              {/* CHANGE 1: Onboard Store Agreed Payout Model based on Scans */}
               <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-3">
                 <label className="block text-xs font-bold text-emerald-400">
                   Agreed Payout Agreement Model
@@ -2439,7 +2575,7 @@ export default function OperationsPortal() {
                     type="button"
                     onClick={() => {
                       setFormPayoutModel("FIXED");
-                      setFormRatePerFootfall(0);
+                      setFormRatePerScan(0);
                     }}
                     className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition border ${
                       formPayoutModel === "FIXED"
@@ -2452,16 +2588,16 @@ export default function OperationsPortal() {
                   <button
                     type="button"
                     onClick={() => {
-                      setFormPayoutModel("PERFORMANCE");
+                      setFormPayoutModel("PER_SCAN");
                       setFormBaseRent(0);
                     }}
                     className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition border ${
-                      formPayoutModel === "PERFORMANCE"
+                      formPayoutModel === "PER_SCAN"
                         ? "bg-emerald-600 text-white border-emerald-500"
                         : "bg-slate-900 text-slate-400 border-slate-800"
                     }`}
                   >
-                    Per Footfall
+                    Per Scan
                   </button>
                   <button
                     type="button"
@@ -2489,27 +2625,27 @@ export default function OperationsPortal() {
                         value={formBaseRent}
                         onChange={(e) => setFormBaseRent(Number(e.target.value))}
                         className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono focus:outline-none focus:border-emerald-500"
-                        placeholder="2500"
+                        placeholder="2000"
                       />
-                      <p className="text-[11px] text-slate-500 mt-1">Flat fixed monthly rent regardless of passerby traffic.</p>
+                      <p className="text-[11px] text-slate-500 mt-1">Flat fixed monthly rent regardless of visitor scans.</p>
                     </div>
                   )}
 
-                  {formPayoutModel === "PERFORMANCE" && (
+                  {formPayoutModel === "PER_SCAN" && (
                     <div>
                       <label className="block text-xs font-semibold text-slate-300 mb-1">
-                        Rate / Footfall (₹)
+                        Rate / QR Scan (₹)
                       </label>
                       <input
                         type="number"
                         step="0.01"
-                        value={formRatePerFootfall}
-                        onChange={(e) => setFormRatePerFootfall(Number(e.target.value))}
+                        value={formRatePerScan}
+                        onChange={(e) => setFormRatePerScan(Number(e.target.value))}
                         className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono focus:outline-none focus:border-emerald-500"
-                        placeholder="0.10"
+                        placeholder="2.00"
                       />
                       <p className="text-[11px] text-slate-500 mt-1">
-                        Pure performance. Payout = Total Footfall × Rate. No base rent.
+                        Pure performance. Payout = Total Verified QR Scans × Rate. No base rent.
                       </p>
                     </div>
                   )}
@@ -2531,15 +2667,15 @@ export default function OperationsPortal() {
 
                       <div>
                         <label className="block text-xs font-semibold text-slate-300 mb-1">
-                          + Bonus / Footfall (₹)
+                          + Bonus / QR Scan (₹)
                         </label>
                         <input
                           type="number"
                           step="0.01"
-                          value={formRatePerFootfall}
-                          onChange={(e) => setFormRatePerFootfall(Number(e.target.value))}
+                          value={formRatePerScan}
+                          onChange={(e) => setFormRatePerScan(Number(e.target.value))}
                           className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono focus:outline-none focus:border-emerald-500"
-                          placeholder="0.05"
+                          placeholder="1.00"
                         />
                       </div>
                     </div>
@@ -2661,7 +2797,7 @@ export default function OperationsPortal() {
                 <input
                   type="text"
                   value={adClientPin}
-                  onChange={(e) => setAdClientPin(e.target.value)}
+                  onChange={(e) => setEditAdClientPin(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono focus:outline-none focus:border-indigo-500"
                   placeholder="1234"
                   required
@@ -2812,7 +2948,6 @@ export default function OperationsPortal() {
                 </p>
               </div>
 
-              {/* Direct APK File Selector (Auto-calculates hash) */}
               <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
                 <label className="block text-xs font-semibold text-slate-300">
                   Select Release APK (Auto-Generates SHA-256 Checksum)
@@ -2864,7 +2999,7 @@ export default function OperationsPortal() {
                   <div className="w-full bg-slate-950 rounded-full h-2 overflow-hidden border border-slate-800">
                     <div
                       className="bg-indigo-600 h-full transition-all duration-200"
-                      style={{ width: `${otaUploadProgress}%` }}
+                      style={{ width: `${uploadProgress}%` }}
                     />
                   </div>
                 </div>

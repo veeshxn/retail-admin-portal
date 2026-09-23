@@ -14,6 +14,9 @@ export interface MapDevice {
   store_close_time?: string;
   footfall?: number;
   impressions?: number;
+  qrScans?: number;
+  adQrScans?: number;
+  mysteryQrScans?: number;
 }
 
 interface FleetMapProps {
@@ -46,7 +49,6 @@ export default function FleetMap({ devices }: FleetMapProps) {
         attributionControl: false,
       }).setView([initialLat, initialLng], validDevices.length > 0 ? 12 : 7);
 
-      // 1. Dark Basemap (Free, unwatermarked, no API key required)
       L.tileLayer(
         "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
         {
@@ -55,7 +57,6 @@ export default function FleetMap({ devices }: FleetMapProps) {
         }
       ).addTo(map);
 
-      // 2. Clear Road & City Labels
       L.tileLayer(
         "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}",
         {
@@ -115,11 +116,10 @@ export default function FleetMap({ devices }: FleetMapProps) {
         iconAnchor: [12, 12],
       });
 
-      // Direction link targeting device GPS coordinates
       const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${device.latitude},${device.longitude}`;
 
       const popupHtml = `
-        <div style="font-family: sans-serif; background: #0f172a; color: #f8fafc; padding: 12px; border-radius: 10px; border: 1px solid #334155; min-width: 190px;">
+        <div style="font-family: sans-serif; background: #0f172a; color: #f8fafc; padding: 12px; border-radius: 10px; border: 1px solid #334155; min-width: 200px;">
           <div style="font-weight: bold; font-size: 13px; margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center;">
             <span>${device.storeId}</span>
             <span style="font-size: 10px; color: ${color}; font-weight: 600;">${device.status}</span>
@@ -128,6 +128,9 @@ export default function FleetMap({ devices }: FleetMapProps) {
             🔋 Battery: <b style="color: #f8fafc;">${device.battery_percentage ?? "--"}%</b><br/>
             👥 Footfall: <b style="color: #818cf8;">${device.footfall ?? 0}</b><br/>
             🎬 Ad Plays: <b style="color: #fbbf24;">${device.impressions ?? 0}</b><br/>
+            📱 Total QR Scans: <b style="color: #34d399;">${device.qrScans ?? 0}</b><br/>
+            <span style="padding-left: 10px; color: #94a3b8; font-size: 10px;">• Ad QR: <b style="color: #38bdf8;">${device.adQrScans ?? 0}</b></span><br/>
+            <span style="padding-left: 10px; color: #94a3b8; font-size: 10px;">• Surprise QR: <b style="color: #f472b6;">${device.mysteryQrScans ?? 0}</b></span><br/>
             ⏰ Hours: ${device.store_open_time || "09:00"} - ${device.store_close_time || "21:30"}
           </div>
           <a

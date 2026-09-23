@@ -21,10 +21,9 @@ import {
   ShieldCheck,
   Clock,
   Radio,
-  CheckCircle2,
   AlertTriangle,
   Lock,
-  Layers,
+  QrCode,
 } from "lucide-react";
 
 interface AdCampaign {
@@ -59,6 +58,7 @@ export default function AdvertiserPortal({
   const [totalNetworkPlays, setTotalNetworkPlays] = useState(0);
   const [totalAudienceFootfall, setTotalAudienceFootfall] = useState(0);
   const [totalMysteryTaps, setTotalMysteryTaps] = useState(0);
+  const [totalQrScans, setTotalQrScans] = useState(0);
   const [loading, setLoading] = useState(true);
 
   // Check persistent session
@@ -93,7 +93,7 @@ export default function AdvertiserPortal({
     fetchAd();
   }, [adId]);
 
-  // Listen to live impressions and tablet counts
+  // Listen to live impressions, tablet counts, and campaign-specific QR scans
   useEffect(() => {
     if (!isAuthenticated || !ad) return;
 
@@ -101,17 +101,28 @@ export default function AdvertiserPortal({
       let plays = 0;
       let footfall = 0;
       let taps = 0;
+      let qrCount = 0;
+
+      const adKey = `ad_${ad.id}`;
 
       snap.forEach((docSnap) => {
         const d = docSnap.data();
         plays += Number(d.total_impressions || 0);
         footfall += Number(d.total_ble_footfall || 0);
         taps += Number(d.total_mystery_taps || 0);
+
+        if (d.qr_scans && typeof d.qr_scans === "object") {
+          qrCount += Number(d.qr_scans[adKey] || d.qr_scans[ad.docId] || d.qr_scans[adId] || 0);
+        }
+        if (d[`qr_scans.${adKey}`]) {
+          qrCount += Number(d[`qr_scans.${adKey}`]);
+        }
       });
 
       setTotalNetworkPlays(plays);
       setTotalAudienceFootfall(footfall);
       setTotalMysteryTaps(taps);
+      setTotalQrScans(qrCount);
     });
 
     const unsubDevices = onSnapshot(collection(db, "devices"), (snap) => {
@@ -122,7 +133,7 @@ export default function AdvertiserPortal({
       unsubMetrics();
       unsubDevices();
     };
-  }, [isAuthenticated, ad]);
+  }, [isAuthenticated, ad, adId]);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -285,13 +296,13 @@ export default function AdvertiserPortal({
 
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
             <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-              Interactive Engagements
+              Direct Campaign QR Scans
             </p>
-            <p className="text-2xl font-bold mt-1 text-purple-400 flex items-center gap-2 font-mono">
-              <Sparkles className="w-5 h-5" />
-              {totalMysteryTaps.toLocaleString()}
+            <p className="text-2xl font-bold mt-1 text-emerald-400 flex items-center gap-2 font-mono">
+              <QrCode className="w-5 h-5" />
+              {totalQrScans.toLocaleString()}
             </p>
-            <p className="text-[11px] text-slate-500 mt-1">Direct touch screen interactions</p>
+            <p className="text-[11px] text-slate-500 mt-1">Audience QR conversions</p>
           </div>
 
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
