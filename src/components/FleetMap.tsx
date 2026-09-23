@@ -51,18 +51,12 @@ export default function FleetMap({ devices }: FleetMapProps) {
 
       L.tileLayer(
         "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
-        {
-          maxNativeZoom: 16,
-          maxZoom: 19,
-        }
+        { maxNativeZoom: 16, maxZoom: 19 }
       ).addTo(map);
 
       L.tileLayer(
         "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}",
-        {
-          maxNativeZoom: 16,
-          maxZoom: 19,
-        }
+        { maxNativeZoom: 16, maxZoom: 19 }
       ).addTo(map);
 
       L.control.zoom({ position: "bottomright" }).addTo(map);
@@ -71,7 +65,6 @@ export default function FleetMap({ devices }: FleetMapProps) {
 
     const map = mapInstanceRef.current;
 
-    // Clear existing markers on re-render
     map.eachLayer((layer) => {
       if (layer instanceof L.Marker) {
         map.removeLayer(layer);
@@ -79,8 +72,19 @@ export default function FleetMap({ devices }: FleetMapProps) {
     });
 
     const bounds = L.latLngBounds([]);
+    const coordKeyCounts: Record<string, number> = {};
 
     validDevices.forEach((device) => {
+      // Coordinate jittering prevents devices in the same building from hiding directly behind each other
+      const coordKey = `${device.latitude?.toFixed(4)}_${device.longitude?.toFixed(4)}`;
+      const duplicateCount = coordKeyCounts[coordKey] || 0;
+      coordKeyCounts[coordKey] = duplicateCount + 1;
+
+      const offsetLat = duplicateCount * 0.00025;
+      const offsetLng = duplicateCount * 0.00025;
+      const markerLat = (device.latitude ?? 0) + offsetLat;
+      const markerLng = (device.longitude ?? 0) + offsetLng;
+
       const color =
         device.status === "ONLINE"
           ? "#10b981"
@@ -162,14 +166,14 @@ export default function FleetMap({ devices }: FleetMapProps) {
         </div>
       `;
 
-      const marker = L.marker([device.latitude!, device.longitude!], {
+      const marker = L.marker([markerLat, markerLng], {
         icon: customIcon,
       }).bindPopup(popupHtml, {
         className: "dark-leaflet-popup",
       });
 
       marker.addTo(map);
-      bounds.extend([device.latitude!, device.longitude!]);
+      bounds.extend([markerLat, markerLng]);
     });
 
     if (validDevices.length > 1) {

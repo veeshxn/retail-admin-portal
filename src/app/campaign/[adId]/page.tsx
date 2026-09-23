@@ -24,6 +24,9 @@ import {
   AlertTriangle,
   Lock,
   QrCode,
+  MapPin,
+  Building2,
+  TrendingUp,
 } from "lucide-react";
 
 interface AdCampaign {
@@ -37,6 +40,21 @@ interface AdCampaign {
   pricingModel: string;
   contractAmount: number;
   clientPin?: string;
+}
+
+interface StoreMetadata {
+  storeId: string;
+  storeName: string;
+  city: string;
+}
+
+interface StorePerformance {
+  storeId: string;
+  storeName: string;
+  city: string;
+  plays: number;
+  footfall: number;
+  qrScans: number;
 }
 
 export default function AdvertiserPortal({
@@ -59,6 +77,8 @@ export default function AdvertiserPortal({
   const [totalAudienceFootfall, setTotalAudienceFootfall] = useState(0);
   const [totalMysteryTaps, setTotalMysteryTaps] = useState(0);
   const [totalQrScans, setTotalQrScans] = useState(0);
+  const [storePerformances, setStorePerformances] = useState<StorePerformance[]>([]);
+  const [storesMap, setStoresMap] = useState<Record<string, StoreMetadata>>({});
   const [loading, setLoading] = useState(true);
 
   // Check persistent session
@@ -69,7 +89,24 @@ export default function AdvertiserPortal({
     }
   }, [adId]);
 
-  // Robust Campaign Lookup
+  // Load stores directory for store names & cities
+  useEffect(() => {
+    const unsub = onSnapshot(collection(db, "stores"), (snap) => {
+      const map: Record<string, StoreMetadata> = {};
+      snap.forEach((d) => {
+        const data = d.data();
+        map[d.id] = {
+          storeId: d.id,
+          storeName: data.storeName || d.id,
+          city: data.city || "Ludhiana",
+        };
+      });
+      setStoresMap(map);
+    });
+    return () => unsub();
+  }, []);
+
+  // Campaign Lookup
   useEffect(() => {
     async function fetchAd() {
       try {
@@ -93,7 +130,7 @@ export default function AdvertiserPortal({
     fetchAd();
   }, [adId]);
 
-  // Listen to live impressions, tablet counts, and campaign-specific QR scans
+  // Listen to daily impressions and build store-by-store performance analytics
   useEffect(() => {
     if (!isAuthenticated || !ad) return;
 
@@ -104,25 +141,62 @@ export default function AdvertiserPortal({
       let qrCount = 0;
 
       const adKey = `ad_${ad.id}`;
+      const storeStats: Record<string, { plays: number; footfall: number; qrScans: number }> = {};
 
       snap.forEach((docSnap) => {
         const d = docSnap.data();
-        plays += Number(d.total_impressions || 0);
-        footfall += Number(d.total_ble_footfall || 0);
-        taps += Number(d.total_mystery_taps || 0);
 
+        let currentStoreId = d.storeId;
+        if (!currentStoreId && docSnap.id.includes("_")) {
+          currentStoreId = docSnap.id.substring(docSnap.id.indexOf("_") + 1);
+        }
+        if (!currentStoreId) return;
+
+        if (!storeStats[currentStoreId]) {
+          storeStats[currentStoreId] = { plays: 0, footfall: 0, qrScans: 0 };
+        }
+
+        const docImpressions = Number(d.total_impressions || 0);
+        const docFootfall = Number(d.total_ble_footfall || 0);
+        const docTaps = Number(d.total_mystery_taps || 0);
+
+        plays += docImpressions;
+        footfall += docFootfall;
+        taps += docTaps;
+
+        storeStats[currentStoreId].plays += docImpressions;
+        storeStats[currentStoreId].footfall += docFootfall;
+
+        // Extract scans specifically attributed to this commercial campaign
+        let adScansForDoc = 0;
         if (d.qr_scans && typeof d.qr_scans === "object") {
-          qrCount += Number(d.qr_scans[adKey] || d.qr_scans[ad.docId] || d.qr_scans[adId] || 0);
+          adScansForDoc += Number(d.qr_scans[adKey] || d.qr_scans[ad.docId] || d.qr_scans[adId] || 0);
         }
         if (d[`qr_scans.${adKey}`]) {
-          qrCount += Number(d[`qr_scans.${adKey}`]);
+          adScansForDoc += Number(d[`qr_scans.${adKey}`]);
         }
+
+        qrCount += adScansForDoc;
+        storeStats[currentStoreId].qrScans += adScansForDoc;
       });
 
       setTotalNetworkPlays(plays);
       setTotalAudienceFootfall(footfall);
       setTotalMysteryTaps(taps);
       setTotalQrScans(qrCount);
+
+      // Build array with store names & cities
+      const perfList: StorePerformance[] = Object.entries(storeStats).map(([sId, stats]) => ({
+        storeId: sId,
+        storeName: storesMap[sId]?.storeName || sId,
+        city: storesMap[sId]?.city || "Ludhiana",
+        plays: stats.plays,
+        footfall: stats.footfall,
+        qrScans: stats.qrScans,
+      }));
+
+      perfList.sort((a, b) => b.qrScans - a.qrScans || b.plays - a.plays);
+      setStorePerformances(perfList);
     });
 
     const unsubDevices = onSnapshot(collection(db, "devices"), (snap) => {
@@ -133,7 +207,7 @@ export default function AdvertiserPortal({
       unsubMetrics();
       unsubDevices();
     };
-  }, [isAuthenticated, ad, adId]);
+  }, [isAuthenticated, ad, adId, storesMap]);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -172,7 +246,7 @@ export default function AdvertiserPortal({
           <AlertTriangle className="w-10 h-10 text-amber-400 mx-auto" />
           <h2 className="text-base font-bold text-white">Campaign Not Found</h2>
           <p className="text-xs text-slate-400">
-            No active campaign found under reference identifier <code className="text-indigo-400 font-mono">{adId}</code>.
+            No active campaign found under identifier <code className="text-indigo-400 font-mono">{adId}</code>.
           </p>
         </div>
       </div>
@@ -181,7 +255,6 @@ export default function AdvertiserPortal({
 
   const campaignTitle = ad.title || `Campaign #${ad.id}`;
 
-  // Passcode Gate
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4 font-sans">
@@ -211,7 +284,7 @@ export default function AdvertiserPortal({
                 className="w-full text-center tracking-widest text-xl font-mono px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white focus:outline-none focus:border-indigo-500"
               />
               <p className="text-[11px] text-slate-500 mt-1.5">
-                Secure passkey provided by your media network account executive.
+                Passkey provided by your media network account executive.
               </p>
             </div>
 
@@ -233,8 +306,19 @@ export default function AdvertiserPortal({
     );
   }
 
+  // Group metrics by city for market analysis
+  const citySummary: Record<string, { plays: number; scans: number; footfall: number }> = {};
+  storePerformances.forEach((sp) => {
+    if (!citySummary[sp.city]) {
+      citySummary[sp.city] = { plays: 0, scans: 0, footfall: 0 };
+    }
+    citySummary[sp.city].plays += sp.plays;
+    citySummary[sp.city].scans += sp.qrScans;
+    citySummary[sp.city].footfall += sp.footfall;
+  });
+
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans pb-12">
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans pb-16">
       {/* Header */}
       <header className="border-b border-slate-800 bg-slate-900/60 backdrop-blur px-6 py-4 flex items-center justify-between sticky top-0 z-30">
         <div className="flex items-center gap-3">
@@ -269,7 +353,7 @@ export default function AdvertiserPortal({
       </header>
 
       {/* Main Content */}
-      <main className="p-6 max-w-5xl mx-auto space-y-6">
+      <main className="p-6 max-w-6xl mx-auto space-y-6">
         {/* KPI Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
@@ -302,30 +386,29 @@ export default function AdvertiserPortal({
               <QrCode className="w-5 h-5" />
               {totalQrScans.toLocaleString()}
             </p>
-            <p className="text-[11px] text-slate-500 mt-1">Audience QR conversions</p>
+            <p className="text-[11px] text-slate-500 mt-1">Direct audience conversions</p>
           </div>
 
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
             <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-              Slot Duration
+              Connected Kiosks
             </p>
             <p className="text-2xl font-bold mt-1 text-white flex items-center gap-2 font-mono">
-              <Clock className="w-5 h-5 text-slate-400" />
-              {Number(ad.durationSeconds || 15)}s
+              <Building2 className="w-5 h-5 text-slate-400" />
+              {totalDisplaysCount} Screens
             </p>
-            <p className="text-[11px] text-slate-500 mt-1">Loop frequency: continuous</p>
+            <p className="text-[11px] text-slate-500 mt-1">Active retail tablets</p>
           </div>
         </div>
 
-        {/* Video Creative & Campaign Details Grid */}
+        {/* Video Creative & Network SLA Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Active Creative Player */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-3">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
               <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
                 <Play className="w-4 h-4 text-indigo-400" /> Active Creative Loop
               </h3>
-              <span className="text-[11px] font-mono text-slate-400">MP4 Video</span>
+              <span className="text-[11px] font-mono text-slate-400">{Number(ad.durationSeconds || 15)}s MP4</span>
             </div>
 
             <div className="relative rounded-xl overflow-hidden bg-black aspect-video flex items-center justify-center border border-slate-800">
@@ -344,12 +427,11 @@ export default function AdvertiserPortal({
             )}
           </div>
 
-          {/* Network Certification Card */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4 flex flex-col justify-between">
             <div className="space-y-3">
               <div className="flex items-center justify-between pb-2 border-b border-slate-800">
                 <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-emerald-400" /> Network Certification
+                  <ShieldCheck className="w-4 h-4 text-emerald-400" /> Network SLA Certification
                 </h3>
                 <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
                   100% SLA Verified
@@ -358,31 +440,114 @@ export default function AdvertiserPortal({
 
               <div className="space-y-2 text-xs text-slate-300 leading-relaxed">
                 <p>
-                  This campaign is operating across our digital tablet network with continuous audit telemetry logging.
+                  Telemetry log data is transmitted directly from physical in-store Android kiosk hardware heartbeats every 60 seconds.
                 </p>
-                <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1.5">
+                <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1.5 font-mono text-xs">
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Campaign ID:</span>
-                    <span className="font-mono text-white">ad_{ad.id}</span>
+                    <span className="text-slate-400">Campaign DB Key:</span>
+                    <span className="text-white">ad_{ad.id}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Total Connected Displays:</span>
-                    <span className="font-mono text-indigo-400 font-bold">{totalDisplaysCount} Kiosks</span>
+                    <span className="text-slate-400">Total Cities Covered:</span>
+                    <span className="text-indigo-400 font-bold">{Object.keys(citySummary).length} Markets</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-400">Hardware Heartbeat:</span>
-                    <span className="text-emerald-400 flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Live
+                    <span className="text-slate-400">Network Hardware Status:</span>
+                    <span className="text-emerald-400 flex items-center gap-1 font-sans">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" /> Live Telemetry Synced
                     </span>
                   </div>
                 </div>
               </div>
             </div>
 
-            <div className="p-3 bg-indigo-500/10 border border-indigo-500/20 rounded-xl text-xs text-indigo-300 flex items-center gap-2">
-              <Radio className="w-4 h-4 shrink-0" />
-              <span>Screens log telemetry heartbeats every 60 seconds directly to cloud audit logs.</span>
+            {/* City Distribution Chips */}
+            <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-1.5">
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">
+                Geographic Market Distribution
+              </span>
+              <div className="flex flex-wrap gap-2 pt-1">
+                {Object.entries(citySummary).map(([city, data]) => (
+                  <span
+                    key={city}
+                    className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-300"
+                  >
+                    <MapPin className="w-3.5 h-3.5 text-indigo-400" />
+                    <b>{city}:</b> {data.plays.toLocaleString()} plays • {data.scans} scans
+                  </span>
+                ))}
+              </div>
             </div>
+          </div>
+        </div>
+
+        {/* Geographic & Store-by-Store Audit Table */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-sm">
+          <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <MapPin className="w-4 h-4 text-emerald-400" />
+              <h3 className="text-sm font-bold text-white">Location &amp; Store Performance Breakdown</h3>
+            </div>
+            <span className="text-xs text-slate-400">{storePerformances.length} Active Stores</span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs text-slate-300">
+              <thead className="bg-slate-950 text-slate-400 font-semibold border-b border-slate-800">
+                <tr>
+                  <th className="px-6 py-3">Store Location</th>
+                  <th className="px-6 py-3">City / Area</th>
+                  <th className="px-6 py-3">Screen Plays</th>
+                  <th className="px-6 py-3">Shopper Footfall</th>
+                  <th className="px-6 py-3">Direct QR Scans</th>
+                  <th className="px-6 py-3 text-right">Conversion Rate</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 font-sans">
+                {storePerformances.length === 0 ? (
+                  <tr>
+                    <td colSpan={6} className="px-6 py-8 text-center text-slate-500">
+                      No store performance logs recorded yet for this flight.
+                    </td>
+                  </tr>
+                ) : (
+                  storePerformances.map((sp) => {
+                    const convRate = sp.plays > 0 ? ((sp.qrScans / sp.plays) * 100).toFixed(2) : "0.00";
+                    return (
+                      <tr key={sp.storeId} className="hover:bg-slate-800/30 transition">
+                        <td className="px-6 py-4 font-semibold text-white">
+                          <p>{sp.storeName}</p>
+                          <p className="text-[10px] text-slate-500 font-mono mt-0.5">{sp.storeId}</p>
+                        </td>
+
+                        <td className="px-6 py-4 font-medium text-slate-300 flex items-center gap-1.5">
+                          <MapPin className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                          <span>{sp.city}</span>
+                        </td>
+
+                        <td className="px-6 py-4 font-mono font-bold text-amber-400">
+                          {sp.plays.toLocaleString()}
+                        </td>
+
+                        <td className="px-6 py-4 font-mono text-indigo-400">
+                          {sp.footfall.toLocaleString()} passersby
+                        </td>
+
+                        <td className="px-6 py-4">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-mono font-bold">
+                            <QrCode className="w-3.5 h-3.5" /> {sp.qrScans} scans
+                          </span>
+                        </td>
+
+                        <td className="px-6 py-4 text-right font-mono font-bold text-slate-300">
+                          {convRate}%
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
       </main>

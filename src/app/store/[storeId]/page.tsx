@@ -7,6 +7,7 @@ import {
   getDoc,
   setDoc,
   collection,
+  getDocs,
   onSnapshot,
 } from "firebase/firestore";
 import {
@@ -27,6 +28,8 @@ import {
   Phone,
   Calendar,
   QrCode,
+  Gift,
+  Film,
 } from "lucide-react";
 
 interface StoreData {
@@ -61,6 +64,16 @@ interface PayoutRecord {
   paidAt?: number;
 }
 
+interface CampaignBreakdownItem {
+  id: string;
+  name: string;
+  type: "COMMERCIAL_AD" | "MYSTERY_BOX";
+  brand: string;
+  scans: number;
+  taps?: number;
+  earnings: number;
+}
+
 export default function ShopkeeperPortal({
   params,
 }: {
@@ -80,6 +93,7 @@ export default function ShopkeeperPortal({
   const [monthlyFootfall, setMonthlyFootfall] = useState(0);
   const [monthlyQrScans, setMonthlyQrScans] = useState(0);
   const [payouts, setPayouts] = useState<PayoutRecord[]>([]);
+  const [campaignBreakdown, setCampaignBreakdown] = useState<CampaignBreakdownItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [wifiHelpOpen, setWifiHelpOpen] = useState(false);
 
@@ -98,7 +112,7 @@ export default function ShopkeeperPortal({
     }
   }, [storeId]);
 
-  // Load initial store profile to check passkey
+  // Load initial store profile
   useEffect(() => {
     async function fetchStore() {
       try {
@@ -136,9 +150,13 @@ export default function ShopkeeperPortal({
       }
     });
 
-    const unsubImpressions = onSnapshot(collection(db, "daily_impressions"), (snap) => {
+    const unsubImpressions = onSnapshot(collection(db, "daily_impressions"), async (snap) => {
       let footfallSum = 0;
       let qrScansSum = 0;
+
+      const adScansMap: Record<string, number> = {};
+      const mysteryScansMap: Record<string, number> = {};
+      const mysteryTapsMap: Record<string, number> = {};
 
       snap.forEach((docSnap) => {
         const d = docSnap.data();
@@ -150,17 +168,82 @@ export default function ShopkeeperPortal({
         if (currentStoreId === storeId) {
           footfallSum += Number(d.total_ble_footfall || 0);
 
+          // 1. Collect commercial ad scans
           if (d.qr_scans && typeof d.qr_scans === "object") {
-            qrScansSum += Object.values(d.qr_scans).reduce((sum: number, val: any) => sum + Number(val || 0), 0);
+            Object.entries(d.qr_scans).forEach(([cid, val]) => {
+              const count = Number(val || 0);
+              adScansMap[cid] = (adScansMap[cid] || 0) + count;
+              qrScansSum += count;
+            });
           }
+
+          // 2. Collect surprise box scans
           if (d.mystery_scans && typeof d.mystery_scans === "object") {
-            qrScansSum += Object.values(d.mystery_scans).reduce((sum: number, val: any) => sum + Number(val || 0), 0);
+            Object.entries(d.mystery_scans).forEach(([cid, val]) => {
+              const count = Number(val || 0);
+              const cleanCid = cid.replace(/^mystery_/, "");
+              mysteryScansMap[cleanCid] = (mysteryScansMap[cleanCid] || 0) + count;
+              qrScansSum += count;
+            });
+          }
+
+          // 3. Collect mystery taps
+          if (d.mystery_taps && typeof d.mystery_taps === "object") {
+            Object.entries(d.mystery_taps).forEach(([cid, val]) => {
+              mysteryTapsMap[cid] = (mysteryTapsMap[cid] || 0) + Number(val || 0);
+            });
           }
         }
       });
 
       setMonthlyFootfall(footfallSum);
       setMonthlyQrScans(qrScansSum);
+
+      // Build itemized list by matching metadata from active_ads and mystery_campaigns
+      try {
+        const adsSnap = await getDocs(collection(db, "active_ads"));
+        const mysterySnap = await getDocs(collection(db, "mystery_campaigns"));
+
+        const items: CampaignBreakdownItem[] = [];
+        const scanRate = store?.ratePerScan ?? store?.ratePerFootfall ?? 2.00;
+
+        // Populate commercial ads
+        adsSnap.forEach((d) => {
+          const data = d.data();
+          const adKey = `ad_${data.id}`;
+          const scans = adScansMap[adKey] || adScansMap[d.id] || 0;
+          items.push({
+            id: adKey,
+            name: data.title || `Ad #${data.id}`,
+            type: "COMMERCIAL_AD",
+            brand: "Commercial Sponsor",
+            scans: scans,
+            earnings: Math.round(scans * scanRate),
+          });
+        });
+
+        // Populate mystery campaigns
+        mysterySnap.forEach((d) => {
+          const data = d.data();
+          const mKey = data.id || d.id;
+          const scans = mysteryScansMap[mKey] || mysteryScansMap[`mystery_${mKey}`] || 0;
+          const taps = mysteryTapsMap[mKey] || 0;
+          items.push({
+            id: mKey,
+            name: data.title || mKey,
+            type: "MYSTERY_BOX",
+            brand: data.brand || "Surprise Box Sponsor",
+            scans: scans,
+            taps: taps,
+            earnings: Math.round(scans * scanRate),
+          });
+        });
+
+        items.sort((a, b) => b.scans - a.scans);
+        setCampaignBreakdown(items);
+      } catch (err) {
+        console.error("Failed to build campaign breakdown:", err);
+      }
     });
 
     const unsubPayouts = onSnapshot(collection(db, "payouts"), (snap) => {
@@ -180,7 +263,7 @@ export default function ShopkeeperPortal({
       unsubImpressions();
       unsubPayouts();
     };
-  }, [isAuthenticated, storeId]);
+  }, [isAuthenticated, storeId, store]);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -227,7 +310,6 @@ export default function ShopkeeperPortal({
     }
   };
 
-  // CHANGE 1: Calculate Shopkeeper Rent based on Verified QR Scans (not footfall)
   const calculateCurrentRent = (): number => {
     if (!store) return 0;
     const rate = store.ratePerScan ?? store.ratePerFootfall ?? 2.00;
@@ -321,7 +403,7 @@ export default function ShopkeeperPortal({
   const isOnline = telemetry?.status === "ONLINE";
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans pb-12">
+    <div className="min-h-screen bg-slate-950 text-slate-100 font-sans pb-16">
       {/* Header */}
       <header className="border-b border-slate-800 bg-slate-900/60 backdrop-blur px-6 py-4 flex items-center justify-between sticky top-0 z-30">
         <div className="flex items-center gap-3">
@@ -405,7 +487,7 @@ export default function ShopkeeperPortal({
           </div>
         )}
 
-        {/* CHANGE 1: Current Month Rent & Verified QR Scans Cards */}
+        {/* 3 Top Summary Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
             <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">
@@ -441,6 +523,74 @@ export default function ShopkeeperPortal({
             <p className="text-[11px] text-slate-500 mt-1">
               {isPaidThisMonth ? "✓ Disbursed" : "Pending monthly cycle"}
             </p>
+          </div>
+        </div>
+
+        {/* Itemized Campaign Activity & Scan Breakdown Table */}
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-sm">
+          <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Receipt className="w-4 h-4 text-emerald-400" />
+              <h3 className="text-sm font-bold text-white">Campaign Activity &amp; Scan Earnings Breakdown</h3>
+            </div>
+            <span className="text-xs text-slate-400 font-mono">Rate: ₹{store.ratePerScan ?? 2}/scan</span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs text-slate-300">
+              <thead className="bg-slate-950 text-slate-400 font-semibold border-b border-slate-800">
+                <tr>
+                  <th className="px-6 py-3">Campaign / Sponsor</th>
+                  <th className="px-6 py-3">Type</th>
+                  <th className="px-6 py-3">Screen Interactions</th>
+                  <th className="px-6 py-3">Verified Scans</th>
+                  <th className="px-6 py-3 text-right">Rent Contribution</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60 font-sans">
+                {campaignBreakdown.length === 0 ? (
+                  <tr>
+                    <td colSpan={5} className="px-6 py-8 text-center text-slate-500">
+                      No campaign scan activity recorded on your kiosk yet this month.
+                    </td>
+                  </tr>
+                ) : (
+                  campaignBreakdown.map((item) => (
+                    <tr key={item.id} className="hover:bg-slate-800/30 transition">
+                      <td className="px-6 py-4">
+                        <p className="font-semibold text-white">{item.name}</p>
+                        <p className="text-[10px] text-slate-500 font-mono mt-0.5">{item.brand}</p>
+                      </td>
+
+                      <td className="px-6 py-4">
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold ${
+                            item.type === "MYSTERY_BOX"
+                              ? "bg-fuchsia-500/10 text-fuchsia-400 border border-fuchsia-500/20"
+                              : "bg-indigo-500/10 text-indigo-400 border border-indigo-500/20"
+                          }`}
+                        >
+                          {item.type === "MYSTERY_BOX" ? <Gift className="w-3 h-3" /> : <Film className="w-3 h-3" />}
+                          {item.type === "MYSTERY_BOX" ? "Surprise Box" : "Video Ad"}
+                        </span>
+                      </td>
+
+                      <td className="px-6 py-4 font-mono text-slate-400">
+                        {item.type === "MYSTERY_BOX" ? `${item.taps ?? 0} Box Taps` : "Continuous Loop"}
+                      </td>
+
+                      <td className="px-6 py-4 font-mono font-bold text-emerald-400">
+                        {item.scans} scans
+                      </td>
+
+                      <td className="px-6 py-4 text-right font-mono font-bold text-emerald-400">
+                        ₹{item.earnings.toLocaleString()}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
           </div>
         </div>
 

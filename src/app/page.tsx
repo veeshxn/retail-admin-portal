@@ -50,6 +50,7 @@ import {
   ShieldCheck,
   MapPin,
   QrCode,
+  Gift,
 } from "lucide-react";
 import type { MapDevice } from "@/components/FleetMap";
 
@@ -122,6 +123,19 @@ interface ActiveAd {
   clientPin?: string;
 }
 
+interface MysteryCampaign {
+  docId: string;
+  id: string;
+  title: string;
+  brand: string;
+  couponCode: string;
+  discountText: string;
+  actionUrl: string;
+  isActive: boolean;
+  contractAmount: number;
+  clientPin?: string;
+}
+
 interface DailyMetrics {
   total_impressions: number;
   total_ble_footfall: number;
@@ -152,6 +166,10 @@ export default function OperationsPortal() {
 
   const [devices, setDevices] = useState<DeviceTelemetry[]>([]);
   const [analyticsMap, setAnalyticsMap] = useState<Record<string, DailyMetrics>>({});
+  const [individualMysteryTaps, setIndividualMysteryTaps] = useState<Record<string, number>>({});
+  const [individualMysteryScans, setIndividualMysteryScans] = useState<Record<string, number>>({});
+  const [individualAdScans, setIndividualAdScans] = useState<Record<string, number>>({});
+
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [selectedScreenshot, setSelectedScreenshot] = useState<{
     storeId: string;
@@ -225,6 +243,17 @@ export default function OperationsPortal() {
   const [editAdPricingModel, setEditAdPricingModel] = useState<"FLAT_CONTRACT" | "PER_PLAY">("FLAT_CONTRACT");
   const [editAdContractAmount, setEditAdContractAmount] = useState<number>(10000);
   const [editAdClientPin, setEditAdClientPin] = useState("");
+
+  const [mysteryCampaigns, setMysteryCampaigns] = useState<MysteryCampaign[]>([]);
+  const [newMysteryModal, setNewMysteryModal] = useState(false);
+  const [mysteryId, setMysteryId] = useState("");
+  const [mysteryTitle, setMysteryTitle] = useState("");
+  const [mysteryBrand, setMysteryBrand] = useState("");
+  const [mysteryCoupon, setMysteryCoupon] = useState("");
+  const [mysteryDiscount, setMysteryDiscount] = useState("10% OFF");
+  const [mysteryUrl, setMysteryUrl] = useState("");
+  const [mysteryContract, setMysteryContract] = useState<number>(5000);
+  const [mysteryPin, setMysteryPin] = useState("1234");
 
   const [currentMonth, setCurrentMonth] = useState("2026-09");
   const [payouts, setPayouts] = useState<Record<string, PayoutRecord>>({});
@@ -307,16 +336,18 @@ export default function OperationsPortal() {
     return () => unsubscribe();
   }, [adminRole]);
 
-  // Daily impressions listener: accurately parses totals without double-counting
+  // Daily impressions listener with isolated fallback to prevent double counting
   useEffect(() => {
     if (!adminRole) return;
     const unsubscribe = onSnapshot(collection(db, "daily_impressions"), (snapshot) => {
       const metrics: Record<string, DailyMetrics> = {};
+      const campaignTaps: Record<string, number> = {};
+      const campaignMysteryScans: Record<string, number> = {};
+      const campaignAdScans: Record<string, number> = {};
 
       snapshot.forEach((docSnap) => {
         const data = docSnap.data();
 
-        // Safe storeId resolution with doc ID fallback
         let storeId = data.storeId;
         if (!storeId && docSnap.id.includes("_")) {
           storeId = docSnap.id.substring(docSnap.id.indexOf("_") + 1);
@@ -337,7 +368,7 @@ export default function OperationsPortal() {
         metrics[storeId].total_impressions += Number(data.total_impressions || 0);
         metrics[storeId].total_ble_footfall += Number(data.total_ble_footfall || 0);
 
-        // 1. Parse Mystery Taps (Prioritize top-level total to eliminate double counting)
+        // 1. Mystery Taps: Parse directly from top-level total to eliminate double counting
         let tapCount = 0;
         if (typeof data.total_mystery_taps === "number") {
           tapCount = data.total_mystery_taps;
@@ -352,7 +383,20 @@ export default function OperationsPortal() {
         }
         metrics[storeId].total_mystery_taps += tapCount;
 
-        // 2. Parse Commercial Ad QR Scans (qr_scans)
+        // Populate campaign-specific mystery taps
+        if (data.mystery_taps && typeof data.mystery_taps === "object") {
+          Object.entries(data.mystery_taps).forEach(([cid, val]) => {
+            campaignTaps[cid] = (campaignTaps[cid] || 0) + Number(val || 0);
+          });
+        }
+        Object.keys(data).forEach((key) => {
+          if (key.startsWith("mystery_taps.") && typeof data[key] === "number") {
+            const cid = key.replace("mystery_taps.", "");
+            campaignTaps[cid] = (campaignTaps[cid] || 0) + Number(data[key]);
+          }
+        });
+
+        // 2. Commercial Ad QR Scans
         let adQrCount = 0;
         if (typeof data.total_qr_scans === "number") {
           adQrCount = data.total_qr_scans;
@@ -365,8 +409,15 @@ export default function OperationsPortal() {
             }
           });
         }
+        metrics[storeId].ad_qr_scans += adQrCount;
 
-        // 3. Parse Surprise Box / Coupon QR Scans (mystery_scans)
+        if (data.qr_scans && typeof data.qr_scans === "object") {
+          Object.entries(data.qr_scans).forEach(([cid, val]) => {
+            campaignAdScans[cid] = (campaignAdScans[cid] || 0) + Number(val || 0);
+          });
+        }
+
+        // 3. Surprise Box / Coupon QR Scans
         let mysteryQrCount = 0;
         if (typeof data.total_mystery_scans === "number") {
           mysteryQrCount = data.total_mystery_scans;
@@ -379,13 +430,28 @@ export default function OperationsPortal() {
             }
           });
         }
-
-        metrics[storeId].ad_qr_scans += adQrCount;
         metrics[storeId].mystery_qr_scans += mysteryQrCount;
+
+        if (data.mystery_scans && typeof data.mystery_scans === "object") {
+          Object.entries(data.mystery_scans).forEach(([cid, val]) => {
+            const cleanCid = cid.replace(/^mystery_/, "");
+            campaignMysteryScans[cleanCid] = (campaignMysteryScans[cleanCid] || 0) + Number(val || 0);
+          });
+        }
+        Object.keys(data).forEach((key) => {
+          if (key.startsWith("mystery_scans.") && typeof data[key] === "number") {
+            const cleanCid = key.replace("mystery_scans.", "").replace(/^mystery_/, "");
+            campaignMysteryScans[cleanCid] = (campaignMysteryScans[cleanCid] || 0) + Number(data[key]);
+          }
+        });
+
         metrics[storeId].total_qr_scans += (adQrCount + mysteryQrCount);
       });
 
       setAnalyticsMap(metrics);
+      setIndividualMysteryTaps(campaignTaps);
+      setIndividualMysteryScans(campaignMysteryScans);
+      setIndividualAdScans(campaignAdScans);
     });
     return () => unsubscribe();
   }, [adminRole]);
@@ -491,6 +557,31 @@ export default function OperationsPortal() {
         const highestId = Math.max(...items.map((a) => a.id));
         setAdNumericId(highestId + 1);
       }
+    });
+    return () => unsubscribe();
+  }, [adminRole]);
+
+  // Mystery campaigns listener
+  useEffect(() => {
+    if (!adminRole) return;
+    const unsubscribe = onSnapshot(collection(db, "mystery_campaigns"), (snapshot) => {
+      const items: MysteryCampaign[] = [];
+      snapshot.forEach((docSnap) => {
+        const d = docSnap.data();
+        items.push({
+          docId: docSnap.id,
+          id: d.id || docSnap.id,
+          title: d.title || docSnap.id,
+          brand: d.brand || "Brand Partner",
+          couponCode: d.couponCode || d.promoCode || "DEAL10",
+          discountText: d.discountText || d.offer || "Special Reward",
+          actionUrl: d.actionUrl || d.targetUrl || "",
+          isActive: d.isActive !== undefined ? Boolean(d.isActive) : true,
+          contractAmount: Number(d.contractAmount || 5000),
+          clientPin: d.clientPin || "1234",
+        });
+      });
+      setMysteryCampaigns(items);
     });
     return () => unsubscribe();
   }, [adminRole]);
@@ -845,6 +936,65 @@ export default function OperationsPortal() {
     }
   };
 
+  const handleCreateMystery = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isMaster) return;
+    const cleanId = mysteryId.trim().toLowerCase().replace(/\s+/g, "_");
+    if (!cleanId) return;
+
+    try {
+      await setDoc(doc(db, "mystery_campaigns", cleanId), {
+        id: cleanId,
+        title: mysteryTitle.trim() || cleanId,
+        brand: mysteryBrand.trim() || "Brand Partner",
+        couponCode: mysteryCoupon.trim().toUpperCase() || "DEAL10",
+        discountText: mysteryDiscount.trim() || "Special Reward",
+        actionUrl: mysteryUrl.trim() || null,
+        isActive: true,
+        contractAmount: Number(mysteryContract) || 0,
+        clientPin: mysteryPin.trim() || "1234",
+        createdAt: Date.now(),
+      });
+
+      await broadcastAdUpdateToFleet();
+
+      setNewMysteryModal(false);
+      setMysteryId("");
+      setMysteryTitle("");
+      setMysteryBrand("");
+      setMysteryCoupon("");
+      setMysteryDiscount("10% OFF");
+      setMysteryUrl("");
+      setMysteryPin("1234");
+      setToastMessage(`✓ Mystery campaign "${cleanId}" launched`);
+      setTimeout(() => setToastMessage(null), 3000);
+    } catch (err) {
+      console.error("Failed to create mystery campaign:", err);
+    }
+  };
+
+  const toggleMysteryActive = async (m: MysteryCampaign) => {
+    if (!isMaster) return;
+    try {
+      await setDoc(doc(db, "mystery_campaigns", m.docId), { isActive: !m.isActive }, { merge: true });
+      await broadcastAdUpdateToFleet();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleDeleteMystery = async (m: MysteryCampaign) => {
+    if (!isMaster) return;
+    if (confirm(`Remove Mystery Campaign "${m.title}"?`)) {
+      try {
+        await deleteDoc(doc(db, "mystery_campaigns", m.docId));
+        await broadcastAdUpdateToFleet();
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  };
+
   const handleDecommission = async (storeId: string) => {
     if (!isMaster) return;
     if (
@@ -860,7 +1010,6 @@ export default function OperationsPortal() {
     }
   };
 
-  // Calculate Shopkeeper Payout based purely on QR Scans
   const calculateStorePayout = (store: StoreRecord): number => {
     const totalScans = analyticsMap[store.storeId]?.total_qr_scans || 0;
     const rate = store.ratePerScan ?? store.ratePerFootfall ?? 2.00;
@@ -918,47 +1067,18 @@ export default function OperationsPortal() {
     setTimeout(() => setCopiedStoreId(null), 2000);
   };
 
-  const totalFleetFootfall = Object.values(analyticsMap).reduce(
-    (sum, m) => sum + m.total_ble_footfall,
-    0
-  );
-  const totalFleetImpressions = Object.values(analyticsMap).reduce(
-    (sum, m) => sum + m.total_impressions,
-    0
-  );
-  const totalFleetQrScans = Object.values(analyticsMap).reduce(
-    (sum, m) => sum + m.total_qr_scans,
-    0
-  );
-  const totalFleetAdQr = Object.values(analyticsMap).reduce(
-    (sum, m) => sum + m.ad_qr_scans,
-    0
-  );
-  const totalFleetMysteryQr = Object.values(analyticsMap).reduce(
-    (sum, m) => sum + m.mystery_qr_scans,
-    0
-  );
+  const totalFleetFootfall = Object.values(analyticsMap).reduce((sum, m) => sum + m.total_ble_footfall, 0);
+  const totalFleetImpressions = Object.values(analyticsMap).reduce((sum, m) => sum + m.total_impressions, 0);
+  const totalFleetQrScans = Object.values(analyticsMap).reduce((sum, m) => sum + m.total_qr_scans, 0);
+  const totalFleetAdQr = Object.values(analyticsMap).reduce((sum, m) => sum + m.ad_qr_scans, 0);
+  const totalFleetMysteryQr = Object.values(analyticsMap).reduce((sum, m) => sum + m.mystery_qr_scans, 0);
 
-  const totalDynamicRentalObligations = stores.reduce(
-    (sum, s) => sum + calculateStorePayout(s),
-    0
-  );
-  const totalPaidOut = Object.values(payouts).reduce(
-    (sum, p) => (p.status === "PAID" ? sum + p.amount : sum),
-    0
-  );
+  const totalDynamicRentalObligations = stores.reduce((sum, s) => sum + calculateStorePayout(s), 0);
+  const totalPaidOut = Object.values(payouts).reduce((sum, p) => (p.status === "PAID" ? sum + p.amount : sum), 0);
 
-  const totalDynamicRevenue = ads
-    .filter((a) => a.isActive)
-    .reduce((sum, ad) => {
-      if (ad.pricingModel === "FLAT_CONTRACT") {
-        return sum + ad.contractAmount;
-      }
-      if (ad.pricingModel === "PER_PLAY") {
-        return sum + Math.round((totalFleetImpressions / 1000) * ad.contractAmount);
-      }
-      return sum;
-    }, 0);
+  const totalDynamicRevenue =
+    ads.filter((a) => a.isActive).reduce((sum, ad) => sum + ad.contractAmount, 0) +
+    mysteryCampaigns.filter((m) => m.isActive).reduce((sum, m) => sum + m.contractAmount, 0);
 
   const netEstimatedProfit = totalDynamicRevenue - totalDynamicRentalObligations;
 
@@ -992,12 +1112,10 @@ export default function OperationsPortal() {
           <div className="w-12 h-12 bg-indigo-500/10 border border-indigo-500/30 rounded-xl flex items-center justify-center mx-auto text-indigo-400">
             <KeyRound className="w-6 h-6" />
           </div>
-
           <div>
             <h2 className="text-lg font-bold text-white tracking-tight">RetailAd Commander</h2>
             <p className="text-xs text-slate-400 mt-1">Enter Master or Partner Passcode</p>
           </div>
-
           <form onSubmit={handleAuthenticate} className="space-y-4">
             <input
               type="password"
@@ -1012,21 +1130,11 @@ export default function OperationsPortal() {
               placeholder="••••"
               className="w-full text-center tracking-widest text-xl font-mono px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-white focus:outline-none focus:border-indigo-500"
             />
-
-            {pinError && (
-              <p className="text-xs text-rose-400 font-semibold">
-                Invalid passkey. Access denied.
-              </p>
-            )}
-
-            <button
-              type="submit"
-              className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold transition shadow-lg shadow-indigo-600/20"
-            >
+            {pinError && <p className="text-xs text-rose-400 font-semibold">Invalid passkey. Access denied.</p>}
+            <button type="submit" className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold transition shadow-lg">
               Authenticate Session
             </button>
           </form>
-
           <div className="pt-2 border-t border-slate-800/80 text-[11px] text-slate-500 space-y-1">
             <p>Master: Full Command &amp; Settlement Access</p>
             <p>Partner: Real-time Telemetry View</p>
@@ -1054,9 +1162,7 @@ export default function OperationsPortal() {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-lg font-bold tracking-tight text-white leading-tight">
-                  RetailAd Operations
-                </h1>
+                <h1 className="text-lg font-bold tracking-tight text-white leading-tight">RetailAd Operations</h1>
                 {isMaster && (
                   <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full">
                     <ShieldCheck className="w-3 h-3" /> Master
@@ -1071,9 +1177,7 @@ export default function OperationsPortal() {
             <button
               onClick={() => setActiveTab("fleet")}
               className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition ${
-                activeTab === "fleet"
-                  ? "bg-indigo-600 text-white shadow-sm"
-                  : "text-slate-400 hover:text-white"
+                activeTab === "fleet" ? "bg-indigo-600 text-white shadow-sm" : "text-slate-400 hover:text-white"
               }`}
             >
               Fleet Commander ({devices.length})
@@ -1081,20 +1185,16 @@ export default function OperationsPortal() {
             <button
               onClick={() => setActiveTab("ads")}
               className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
-                activeTab === "ads"
-                  ? "bg-indigo-600 text-white shadow-sm"
-                  : "text-slate-400 hover:text-white"
+                activeTab === "ads" ? "bg-indigo-600 text-white shadow-sm" : "text-slate-400 hover:text-white"
               }`}
             >
               <Film className="w-3.5 h-3.5" />
-              Campaigns ({ads.length})
+              Campaigns ({ads.length + mysteryCampaigns.length})
             </button>
             <button
               onClick={() => setActiveTab("stores")}
               className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition ${
-                activeTab === "stores"
-                  ? "bg-indigo-600 text-white shadow-sm"
-                  : "text-slate-400 hover:text-white"
+                activeTab === "stores" ? "bg-indigo-600 text-white shadow-sm" : "text-slate-400 hover:text-white"
               }`}
             >
               Store Directory ({stores.length})
@@ -1102,9 +1202,7 @@ export default function OperationsPortal() {
             <button
               onClick={() => setActiveTab("finances")}
               className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${
-                activeTab === "finances"
-                  ? "bg-emerald-600 text-white shadow-sm"
-                  : "text-slate-400 hover:text-white"
+                activeTab === "finances" ? "bg-emerald-600 text-white shadow-sm" : "text-slate-400 hover:text-white"
               }`}
             >
               <IndianRupee className="w-3.5 h-3.5" />
@@ -1118,9 +1216,7 @@ export default function OperationsPortal() {
             <button
               onClick={() => setShowMap(!showMap)}
               className={`flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg transition border ${
-                showMap
-                  ? "bg-indigo-600/20 text-indigo-400 border-indigo-500/30"
-                  : "bg-slate-800 text-slate-400 border-slate-700 hover:text-white"
+                showMap ? "bg-indigo-600/20 text-indigo-400 border-indigo-500/30" : "bg-slate-800 text-slate-400 border-slate-700 hover:text-white"
               }`}
             >
               <MapPin className="w-3.5 h-3.5" />
@@ -1139,8 +1235,15 @@ export default function OperationsPortal() {
                 {syncingFleet ? "Syncing Fleet..." : "Push Ads to Fleet"}
               </button>
               <button
+                onClick={() => setNewMysteryModal(true)}
+                className="flex items-center gap-1.5 bg-fuchsia-600 hover:bg-fuchsia-500 text-white text-xs font-semibold px-3.5 py-2 rounded-lg transition shadow-lg shadow-fuchsia-600/20"
+              >
+                <Gift className="w-4 h-4" />
+                New Mystery Campaign
+              </button>
+              <button
                 onClick={() => setNewAdModal(true)}
-                className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-3.5 py-2 rounded-lg transition shadow-lg shadow-indigo-600/20"
+                className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-3.5 py-2 rounded-lg transition shadow-lg shadow-indigo-600/20"
               >
                 <Plus className="w-4 h-4" />
                 New Ad Campaign
@@ -1188,9 +1291,7 @@ export default function OperationsPortal() {
             <div className="grid grid-cols-1 sm:grid-cols-5 gap-4">
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-                    Total Tablets
-                  </p>
+                  <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Total Tablets</p>
                   <p className="text-2xl font-bold mt-1 text-white">{devices.length}</p>
                 </div>
                 <Tablet className="w-8 h-8 text-slate-600" />
@@ -1198,9 +1299,7 @@ export default function OperationsPortal() {
 
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-                    Online &amp; Active
-                  </p>
+                  <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Online &amp; Active</p>
                   <p className="text-2xl font-bold mt-1 text-emerald-400">
                     {devices.filter((d) => d.status === "ONLINE").length}
                   </p>
@@ -1210,39 +1309,25 @@ export default function OperationsPortal() {
 
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-                    Fleet Footfall
-                  </p>
-                  <p className="text-2xl font-bold mt-1 text-indigo-400">
-                    {totalFleetFootfall.toLocaleString()}
-                  </p>
+                  <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Fleet Footfall</p>
+                  <p className="text-2xl font-bold mt-1 text-indigo-400">{totalFleetFootfall.toLocaleString()}</p>
                 </div>
                 <Users className="w-8 h-8 text-indigo-500/30" />
               </div>
 
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-                    Ad Plays Delivered
-                  </p>
-                  <p className="text-2xl font-bold mt-1 text-amber-400">
-                    {totalFleetImpressions.toLocaleString()}
-                  </p>
+                  <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Ad Plays Delivered</p>
+                  <p className="text-2xl font-bold mt-1 text-amber-400">{totalFleetImpressions.toLocaleString()}</p>
                 </div>
                 <Eye className="w-8 h-8 text-amber-500/30" />
               </div>
 
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-                    Total QR Scans
-                  </p>
-                  <p className="text-2xl font-bold mt-1 text-emerald-400">
-                    {totalFleetQrScans.toLocaleString()}
-                  </p>
-                  <p className="text-[10px] text-slate-500 mt-0.5">
-                    {totalFleetAdQr} Ad • {totalFleetMysteryQr} Surprise
-                  </p>
+                  <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Total QR Scans</p>
+                  <p className="text-2xl font-bold mt-1 text-emerald-400">{totalFleetQrScans.toLocaleString()}</p>
+                  <p className="text-[10px] text-slate-500 mt-0.5">{totalFleetAdQr} Ad • {totalFleetMysteryQr} Surprise</p>
                 </div>
                 <QrCode className="w-8 h-8 text-emerald-500/30" />
               </div>
@@ -1268,16 +1353,11 @@ export default function OperationsPortal() {
                   >
                     <div className="flex items-start justify-between">
                       <div>
-                        <h3 className="text-base font-bold text-white tracking-tight">
-                          {device.storeId}
-                        </h3>
-                        <p className="text-xs text-slate-400 mt-0.5">
-                          v{device.app_version || "1.0"} (build {device.app_version_code || 1})
-                        </p>
+                        <h3 className="text-base font-bold text-white tracking-tight">{device.storeId}</h3>
+                        <p className="text-xs text-slate-400 mt-0.5">v{device.app_version || "1.0"} (build {device.app_version_code || 1})</p>
                       </div>
-
                       <span
-                        className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold tracking-wide ${
+                        className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${
                           isOnline
                             ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
                             : isClosed
@@ -1296,9 +1376,7 @@ export default function OperationsPortal() {
                       </div>
                       <div className="flex items-center gap-2 text-slate-300">
                         <Clock className="w-4 h-4 text-slate-400" />
-                        <span>
-                          {device.store_open_time || "09:00"} - {device.store_close_time || "21:30"}
-                        </span>
+                        <span>{device.store_open_time || "09:00"} - {device.store_close_time || "21:30"}</span>
                       </div>
                       <div className="flex items-center gap-2 text-indigo-400 font-medium">
                         <Users className="w-4 h-4" />
@@ -1342,65 +1420,20 @@ export default function OperationsPortal() {
                       <div className="space-y-1">
                         <p className="text-[11px] font-medium text-slate-400">Proof of Play (Live):</p>
                         <div
-                          onClick={() =>
-                            setSelectedScreenshot({
-                              storeId: device.storeId,
-                              image: device.last_screenshot_base64!,
-                            })
-                          }
+                          onClick={() => setSelectedScreenshot({ storeId: device.storeId, image: device.last_screenshot_base64! })}
                           className="cursor-pointer group relative rounded-lg overflow-hidden border border-slate-800 bg-black aspect-video flex items-center justify-center"
                         >
-                          <img
-                            src={device.last_screenshot_base64}
-                            alt="Kiosk Screen"
-                            className="object-cover w-full h-full group-hover:scale-105 transition duration-300"
-                          />
-                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-xs font-semibold text-white">
-                            Click to Expand
-                          </div>
+                          <img src={device.last_screenshot_base64} alt="Kiosk Screen" className="object-cover w-full h-full group-hover:scale-105 transition duration-300" />
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition flex items-center justify-center text-xs font-semibold text-white">Click to Expand</div>
                         </div>
                       </div>
                     )}
 
                     <div className="grid grid-cols-4 gap-2 pt-1">
-                      <button
-                        onClick={() => sendCommand(device.storeId, "take_screenshot")}
-                        title="Take Screenshot"
-                        className="flex items-center justify-center p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition"
-                      >
-                        <Camera className="w-4 h-4" />
-                      </button>
-
-                      <button
-                        onClick={() => sendCommand(device.storeId, "update_content")}
-                        disabled={!isMaster}
-                        title={isMaster ? "Refresh Ad Campaigns" : "Master Only"}
-                        className="flex items-center justify-center p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 transition disabled:opacity-30"
-                      >
-                        <RefreshCw className="w-4 h-4" />
-                      </button>
-
-                      <button
-                        onClick={() => sendCommand(device.storeId, "force_sync")}
-                        title="Force Immediate Telemetry Sync"
-                        className="flex items-center justify-center p-2 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 border border-indigo-500/30 transition"
-                      >
-                        <Radio className="w-4 h-4" />
-                      </button>
-
-                      <button
-                        onClick={() => {
-                          if (!isMaster) return;
-                          if (confirm(`Reboot tablet at ${device.storeId}?`)) {
-                            sendCommand(device.storeId, "reboot_device");
-                          }
-                        }}
-                        disabled={!isMaster}
-                        title={isMaster ? "Reboot Tablet" : "Master Only"}
-                        className="flex items-center justify-center p-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 transition disabled:opacity-30"
-                      >
-                        <Power className="w-4 h-4" />
-                      </button>
+                      <button onClick={() => sendCommand(device.storeId, "take_screenshot")} title="Take Screenshot" className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 flex justify-center"><Camera className="w-4 h-4" /></button>
+                      <button onClick={() => sendCommand(device.storeId, "update_content")} disabled={!isMaster} title={isMaster ? "Refresh Ad Campaigns" : "Master Only"} className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 flex justify-center disabled:opacity-30"><RefreshCw className="w-4 h-4" /></button>
+                      <button onClick={() => sendCommand(device.storeId, "force_sync")} title="Force Sync" className="p-2 rounded-lg bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 flex justify-center border border-indigo-500/30"><Radio className="w-4 h-4" /></button>
+                      <button onClick={() => isMaster && confirm(`Reboot tablet at ${device.storeId}?`) && sendCommand(device.storeId, "reboot_device")} disabled={!isMaster} title={isMaster ? "Reboot Tablet" : "Master Only"} className="p-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 flex justify-center border border-rose-500/20 disabled:opacity-30"><Power className="w-4 h-4" /></button>
                     </div>
                   </div>
                 );
@@ -1409,138 +1442,169 @@ export default function OperationsPortal() {
           </>
         )}
 
-        {/* TAB 2: CAMPAIGNS */}
+        {/* TAB 2: CAMPAIGNS (VIDEO ADS + MYSTERY CAMPAIGNS) */}
         {activeTab === "ads" && (
-          <div className="space-y-6">
-            <div className="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-xl p-4">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-indigo-500/10 border border-indigo-500/20 rounded-lg text-indigo-400">
-                  <Layers className="w-5 h-5" />
-                </div>
-                <div>
-                  <h2 className="text-sm font-bold text-white">Ad Campaigns &amp; Contract Value</h2>
-                  <p className="text-xs text-slate-400">
-                    Creatives broadcasted across kiosks and their individual client billing rates.
-                  </p>
+          <div className="space-y-8">
+            {/* 1. Mystery Campaigns Section */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-xl p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-fuchsia-500/10 border border-fuchsia-500/20 rounded-lg text-fuchsia-400">
+                    <Gift className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-sm font-bold text-white">Interactive Surprise Box Campaigns</h2>
+                    <p className="text-xs text-slate-400">Tracks individual Mystery Box taps, scans, and coupon conversions.</p>
+                  </div>
                 </div>
               </div>
 
-              <div className="text-xs text-slate-400">
-                Active Contracts Value:{" "}
-                <b className="text-emerald-400 font-mono text-sm">
-                  ₹{totalDynamicRevenue.toLocaleString()}
-                </b>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {mysteryCampaigns.length === 0 ? (
+                  <div className="col-span-3 bg-slate-900 border border-slate-800 rounded-xl p-8 text-center text-slate-500 text-xs">
+                    No Mystery Campaigns found. Click &quot;New Mystery Campaign&quot; above to launch one.
+                  </div>
+                ) : (
+                  mysteryCampaigns.map((m) => {
+                    const taps = individualMysteryTaps[m.id] || 0;
+                    const scans = individualMysteryScans[m.id] || individualMysteryScans[`mystery_${m.id}`] || 0;
+
+                    return (
+                      <div key={m.docId} className="bg-slate-900 border border-slate-800 hover:border-slate-700 transition rounded-xl p-5 flex flex-col justify-between space-y-4">
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <span className="text-[10px] font-mono font-bold bg-fuchsia-500/10 text-fuchsia-400 border border-fuchsia-500/20 px-2 py-0.5 rounded">
+                              ID: {m.id}
+                            </span>
+                            <h3 className="text-base font-bold text-white mt-1.5">{m.title}</h3>
+                            <p className="text-xs text-slate-400 font-semibold">{m.brand} • Code: <code className="text-emerald-400">{m.couponCode}</code></p>
+                          </div>
+                          <button
+                            onClick={() => toggleMysteryActive(m)}
+                            className={`px-2 py-0.5 text-xs font-semibold rounded ${
+                              m.isActive ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-slate-800 text-slate-500"
+                            }`}
+                          >
+                            {m.isActive ? "● Live" : "○ Paused"}
+                          </button>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-3 p-3 bg-slate-950 rounded-xl border border-slate-800/80">
+                          <div>
+                            <p className="text-[10px] uppercase text-slate-400">Total Box Taps</p>
+                            <p className="text-lg font-mono font-bold text-purple-400">{taps.toLocaleString()}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] uppercase text-slate-400">Coupon QR Scans</p>
+                            <p className="text-lg font-mono font-bold text-fuchsia-400">{scans.toLocaleString()}</p>
+                          </div>
+                        </div>
+
+                        {m.actionUrl && (
+                          <div className="text-xs text-slate-400 truncate flex items-center gap-1.5 bg-slate-950 p-2 rounded-lg border border-slate-800">
+                            <ExternalLink className="w-3.5 h-3.5 text-fuchsia-400 shrink-0" />
+                            <span className="truncate">{m.actionUrl}</span>
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-between pt-2 border-t border-slate-800 text-xs text-slate-400">
+                          <span>Fee: ₹{m.contractAmount.toLocaleString()}</span>
+                          {isMaster && (
+                            <button onClick={() => handleDeleteMystery(m)} className="text-rose-400 hover:text-rose-300 p-1">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {ads.length === 0 ? (
-                <div className="col-span-3 bg-slate-900 border border-slate-800 rounded-xl p-12 text-center space-y-3">
-                  <Film className="w-12 h-12 text-slate-600 mx-auto" />
-                  <p className="text-sm font-semibold text-slate-300">No Ads In Rotation</p>
-                  <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                    {isMaster
-                      ? 'Click "New Ad Campaign" to upload a commercial and configure advertiser billing.'
-                      : "No active commercial flights currently running."}
-                  </p>
+            {/* 2. Video Commercials Section */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between bg-slate-900 border border-slate-800 rounded-xl p-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-indigo-500/10 border border-indigo-500/20 rounded-lg text-indigo-400">
+                    <Layers className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-sm font-bold text-white">Commercial Video Campaigns</h2>
+                    <p className="text-xs text-slate-400">Creatives broadcasted across tablets with individual ad QR code conversions.</p>
+                  </div>
                 </div>
-              ) : (
-                ads.map((ad) => (
-                  <div
-                    key={ad.docId}
-                    className="bg-slate-900 border border-slate-800 hover:border-slate-700 transition rounded-xl p-5 flex flex-col justify-between space-y-4"
-                  >
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[10px] font-mono font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2 py-0.5 rounded">
-                            ID: {ad.id}
-                          </span>
-                          <span className="text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded">
-                            {ad.pricingModel === "FLAT_CONTRACT"
-                              ? `₹${ad.contractAmount.toLocaleString()} Flat`
-                              : `₹${ad.contractAmount}/1k Plays`}
-                          </span>
+                <div className="text-xs text-slate-400">
+                  Active Contracts Value: <b className="text-emerald-400 font-mono text-sm">₹{totalDynamicRevenue.toLocaleString()}</b>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {ads.map((ad) => {
+                  const adScans = individualAdScans[`ad_${ad.id}`] || individualAdScans[ad.docId] || 0;
+
+                  return (
+                    <div key={ad.docId} className="bg-slate-900 border border-slate-800 hover:border-slate-700 transition rounded-xl p-5 flex flex-col justify-between space-y-4">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] font-mono font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2 py-0.5 rounded">
+                              ID: {ad.id}
+                            </span>
+                            <span className="text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded">
+                              {ad.pricingModel === "FLAT_CONTRACT" ? `₹${ad.contractAmount.toLocaleString()} Flat` : `₹${ad.contractAmount}/1k Plays`}
+                            </span>
+                          </div>
+                          <h3 className="text-base font-bold text-white mt-1.5">{ad.title}</h3>
+                          <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
+                            <Clock className="w-3.5 h-3.5" /> {ad.durationSeconds} seconds
+                          </p>
                         </div>
-                        <h3 className="text-base font-bold text-white mt-1.5">{ad.title}</h3>
-                        <p className="text-xs text-slate-400 flex items-center gap-1 mt-0.5">
-                          <Clock className="w-3.5 h-3.5" /> {ad.durationSeconds} seconds
-                        </p>
-                      </div>
-
-                      <button
-                        onClick={() => toggleAdActive(ad)}
-                        disabled={!isMaster}
-                        className={`px-2 py-0.5 text-xs font-semibold rounded transition ${
-                          ad.isActive
-                            ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                            : "bg-slate-800 text-slate-500 border border-slate-700"
-                        } disabled:cursor-not-allowed`}
-                      >
-                        {ad.isActive ? "● Broadcasting" : "○ Paused"}
-                      </button>
-                    </div>
-
-                    <div className="relative rounded-lg overflow-hidden bg-black aspect-video flex items-center justify-center border border-slate-800">
-                      <video
-                        src={ad.videoUrl}
-                        controls
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-
-                    {ad.actionUrl && (
-                      <div className="text-xs text-slate-400 truncate flex items-center gap-1.5 bg-slate-950 p-2 rounded-lg border border-slate-800/80">
-                        <ExternalLink className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                        <span className="truncate">{ad.actionUrl}</span>
-                      </div>
-                    )}
-
-                    <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-slate-400">Advertiser Portal URL:</span>
                         <button
-                          onClick={() => copyToClipboard(`${window.location.origin}/campaign/ad_${ad.id}`, `ad_link_${ad.id}`)}
-                          className="text-indigo-400 hover:text-indigo-300 font-semibold flex items-center gap-1"
+                          onClick={() => toggleAdActive(ad)}
+                          disabled={!isMaster}
+                          className={`px-2 py-0.5 text-xs font-semibold rounded transition ${
+                            ad.isActive ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20" : "bg-slate-800 text-slate-500 border border-slate-700"
+                          } disabled:cursor-not-allowed`}
                         >
-                          {copiedStoreId === `ad_link_${ad.id}` ? "✓ Copied Link" : "Copy Link"}
+                          {ad.isActive ? "● Broadcasting" : "○ Paused"}
                         </button>
                       </div>
-                      <p className="text-[11px] font-mono text-slate-300 bg-slate-900 p-1.5 rounded border border-slate-800/80 truncate select-all">
-                        {window.location.origin}/campaign/ad_{ad.id}
-                      </p>
-                      <p className="text-[10px] text-slate-500">
-                        Client Passcode: <code className="text-emerald-400 font-mono font-bold">{ad.clientPin || "1234"}</code>
-                      </p>
-                    </div>
 
-                    <div className="flex items-center justify-between pt-2 border-t border-slate-800">
-                      {isMaster ? (
-                        <>
-                          <button
-                            onClick={() => openEditAdModal(ad)}
-                            className="px-2.5 py-1 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-indigo-400 rounded-lg flex items-center gap-1.5 transition"
-                          >
-                            <Pencil className="w-3.5 h-3.5" /> Edit Campaign
-                          </button>
+                      <div className="relative rounded-lg overflow-hidden bg-black aspect-video flex items-center justify-center border border-slate-800">
+                        <video src={ad.videoUrl} controls className="w-full h-full object-cover" />
+                      </div>
 
-                          <button
-                            onClick={() => handleDeleteAd(ad)}
-                            className="p-1.5 text-rose-400 hover:bg-rose-500/10 rounded-lg transition"
-                            title="Delete Commercial"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </>
-                      ) : (
-                        <span className="text-[11px] text-slate-500 font-mono">
-                          Delivered Plays: {totalFleetImpressions}
-                        </span>
+                      {ad.actionUrl && (
+                        <div className="text-xs text-slate-400 truncate flex items-center gap-1.5 bg-slate-950 p-2 rounded-lg border border-slate-800">
+                          <ExternalLink className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                          <span className="truncate">{ad.actionUrl}</span>
+                        </div>
                       )}
+
+                      <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 flex justify-between items-center text-xs">
+                        <span className="text-slate-400">Direct Ad QR Scans:</span>
+                        <span className="font-mono font-bold text-sky-400 text-sm">{adScans}</span>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-2 border-t border-slate-800">
+                        {isMaster ? (
+                          <>
+                            <button onClick={() => openEditAdModal(ad)} className="px-2.5 py-1 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-indigo-400 rounded-lg flex items-center gap-1.5">
+                              <Pencil className="w-3.5 h-3.5" /> Edit
+                            </button>
+                            <button onClick={() => handleDeleteAd(ad)} className="p-1.5 text-rose-400 hover:bg-rose-500/10 rounded-lg">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </>
+                        ) : (
+                          <span className="text-[11px] text-slate-500 font-mono">Delivered Plays: {totalFleetImpressions}</span>
+                        )}
+                      </div>
                     </div>
-                  </div>
-                ))
-              )}
+                  );
+                })}
+              </div>
             </div>
           </div>
         )}
@@ -1548,140 +1612,11 @@ export default function OperationsPortal() {
         {/* TAB 3: STORE DIRECTORY */}
         {activeTab === "stores" && (
           <div className="space-y-6">
-            {isMaster && (
-              <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-sm space-y-4">
-                <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-indigo-500/10 border border-indigo-500/20 rounded-lg text-indigo-400">
-                      <KeyRound className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h2 className="text-sm font-bold text-white">
-                        Access Control &amp; Fleet Credentials
-                      </h2>
-                      <p className="text-xs text-slate-400">
-                        Hardware kiosk PINs and Web Portal security passcodes.
-                      </p>
-                    </div>
-                  </div>
-
-                  {configSaved && (
-                    <span className="flex items-center gap-1.5 text-xs text-emerald-400 font-semibold bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-lg">
-                      <Check className="w-3.5 h-3.5" /> Saved Live
-                    </span>
-                  )}
-                </div>
-
-                <form onSubmit={handleSaveConfig} className="space-y-4">
-                  <div>
-                    <h3 className="text-xs font-bold text-indigo-400 uppercase tracking-wider mb-2">
-                      📱 In-Store Tablet Hardware PINs
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-300 mb-1">
-                          Registration PIN (Commissioning)
-                        </label>
-                        <input
-                          type="text"
-                          value={config.admin_pin}
-                          onChange={(e) => setConfig({ ...config, admin_pin: e.target.value })}
-                          className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono focus:outline-none focus:border-indigo-500"
-                          required
-                        />
-                        <p className="text-[11px] text-slate-500 mt-1">Entered on tablet during first setup.</p>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-300 mb-1">
-                          Tablet Maintenance PIN (5-Tap Gesture)
-                        </label>
-                        <input
-                          type="text"
-                          value={config.master_pin}
-                          onChange={(e) => setConfig({ ...config, master_pin: e.target.value })}
-                          className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono focus:outline-none focus:border-indigo-500"
-                          required
-                        />
-                        <p className="text-[11px] text-slate-500 mt-1">Unlocks kiosk to Android OS on physical screen.</p>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-300 mb-1">
-                          BLE Footfall Radius ({config.rssi_threshold} dBm)
-                        </label>
-                        <input
-                          type="range"
-                          min="-95"
-                          max="-45"
-                          step="5"
-                          value={config.rssi_threshold}
-                          onChange={(e) =>
-                            setConfig({ ...config, rssi_threshold: Number(e.target.value) })
-                          }
-                          className="w-full accent-indigo-500 mt-2"
-                        />
-                        <p className="text-[11px] text-slate-500 mt-1">-95 (wide 15m) to -45 (close 1m).</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="pt-3 border-t border-slate-800/80">
-                    <h3 className="text-xs font-bold text-emerald-400 uppercase tracking-wider mb-2">
-                      🌐 Web Portal Passcodes
-                    </h3>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-300 mb-1">
-                          Portal Master Passcode (You - Full Access)
-                        </label>
-                        <input
-                          type="text"
-                          value={config.portal_master_pin || ""}
-                          onChange={(e) => setConfig({ ...config, portal_master_pin: e.target.value })}
-                          className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono focus:outline-none focus:border-emerald-500"
-                          placeholder="8888"
-                          required
-                        />
-                        <p className="text-[11px] text-slate-500 mt-1">Unlocks full administrative &amp; financial control.</p>
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-300 mb-1">
-                          Partner Passcode
-                        </label>
-                        <input
-                          type="text"
-                          value={config.portal_partner_pin || ""}
-                          onChange={(e) => setConfig({ ...config, portal_partner_pin: e.target.value })}
-                          className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono focus:outline-none focus:border-amber-500"
-                          placeholder="1111"
-                          required
-                        />
-                        <p className="text-[11px] text-slate-500 mt-1">Telemetry view; edit/destructive actions hidden.</p>
-                      </div>
-
-                      <div className="flex items-end">
-                        <button
-                          type="submit"
-                          className="w-full py-2 px-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-semibold transition shadow"
-                        >
-                          Sync Credentials &amp; Fleet Policies
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </form>
-              </div>
-            )}
-
             <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-sm">
               <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
                 <div>
                   <h3 className="text-sm font-bold text-white">Registered Stores &amp; Dynamic Terms</h3>
-                  <p className="text-xs text-slate-400">
-                    Store locations, hardware status, and agreed commercial terms.
-                  </p>
+                  <p className="text-xs text-slate-400">Store locations, hardware status, and agreed commercial terms.</p>
                 </div>
               </div>
 
@@ -1700,125 +1635,63 @@ export default function OperationsPortal() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60">
-                    {stores.length === 0 ? (
-                      <tr>
-                        <td colSpan={isMaster ? 8 : 7} className="px-6 py-8 text-center text-slate-500">
-                          No store profiles created yet.
-                        </td>
-                      </tr>
-                    ) : (
-                      stores.map((store) => {
-                        const pairedDevice = devices.find((d) => d.storeId === store.storeId);
-                        const isPaired = !!pairedDevice;
-                        const isOnline = pairedDevice?.status === "ONLINE";
-                        const dynamicRent = calculateStorePayout(store);
-                        const storeMetrics = analyticsMap[store.storeId] || {
-                          total_qr_scans: 0,
-                          ad_qr_scans: 0,
-                          mystery_qr_scans: 0,
-                        };
+                    {stores.map((store) => {
+                      const pairedDevice = devices.find((d) => d.storeId === store.storeId);
+                      const isPaired = !!pairedDevice;
+                      const isOnline = pairedDevice?.status === "ONLINE";
+                      const dynamicRent = calculateStorePayout(store);
+                      const storeMetrics = analyticsMap[store.storeId] || {
+                        total_qr_scans: 0,
+                        ad_qr_scans: 0,
+                        mystery_qr_scans: 0,
+                      };
 
-                        return (
-                          <tr key={store.storeId} className="hover:bg-slate-800/30 transition">
-                            <td className="px-6 py-4 font-mono font-bold text-white flex items-center gap-2">
-                              {store.storeId}
-                              <button
-                                onClick={() => copyToClipboard(store.storeId, store.storeId)}
-                                title="Copy Store ID"
-                                className="text-slate-500 hover:text-slate-300"
-                              >
-                                {copiedStoreId === store.storeId ? (
-                                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                                ) : (
-                                  <Copy className="w-3.5 h-3.5" />
-                                )}
-                              </button>
-                            </td>
-
-                            <td className="px-6 py-4">
-                              <p className="font-semibold text-white">{store.storeName}</p>
-                              <p className="text-slate-400 text-[11px]">{store.ownerName} • {store.city}</p>
-                              <div className="flex items-center gap-2 mt-1">
-                                <span className="text-slate-500 font-mono text-[10px]">{store.phone}</span>
-                                <button
-                                  onClick={() => copyToClipboard(`${window.location.origin}/store/${store.storeId}`, `store_link_${store.storeId}`)}
-                                  className="text-[10px] text-indigo-400 hover:text-indigo-300 font-semibold underline"
-                                >
-                                  {copiedStoreId === `store_link_${store.storeId}` ? "✓ Copied Portal Link" : "Copy Shopkeeper Link"}
-                                </button>
+                      return (
+                        <tr key={store.storeId} className="hover:bg-slate-800/30 transition">
+                          <td className="px-6 py-4 font-mono font-bold text-white flex items-center gap-2">
+                            {store.storeId}
+                            <button onClick={() => copyToClipboard(store.storeId, store.storeId)} className="text-slate-500 hover:text-slate-300">
+                              {copiedStoreId === store.storeId ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                            </button>
+                          </td>
+                          <td className="px-6 py-4">
+                            <p className="font-semibold text-white">{store.storeName}</p>
+                            <p className="text-slate-400 text-[11px]">{store.ownerName} • {store.city}</p>
+                          </td>
+                          <td className="px-6 py-4 font-mono text-slate-400">{store.openTime} - {store.closeTime}</td>
+                          <td className="px-6 py-4">
+                            <span className="inline-block px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-800 text-slate-300 border border-slate-700">
+                              {store.payoutModel === "FIXED" && `Flat ₹${store.baseRent.toLocaleString()}`}
+                              {(store.payoutModel === "PER_SCAN" || store.payoutModel === "PERFORMANCE") && `₹${store.ratePerScan || 2}/scan`}
+                              {store.payoutModel === "HYBRID" && `₹${store.baseRent} base + ₹${store.ratePerScan || 2}/scan`}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="font-mono font-bold text-emerald-400">{storeMetrics.total_qr_scans.toLocaleString()}</span>
+                            <p className="text-[10px] text-slate-500 font-mono">{storeMetrics.ad_qr_scans} Ad • {storeMetrics.mystery_qr_scans} Surprise</p>
+                          </td>
+                          <td className="px-6 py-4 font-bold text-emerald-400 font-mono text-sm">₹{dynamicRent.toLocaleString()}</td>
+                          <td className="px-6 py-4">
+                            {isPaired ? (
+                              <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-semibold ${isOnline ? "bg-emerald-500/10 text-emerald-400" : "bg-amber-500/10 text-amber-400"}`}>
+                                <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                                {isOnline ? "Active" : "Offline"}
+                              </span>
+                            ) : (
+                              <span className="text-slate-500 text-[11px]">Unpaired</span>
+                            )}
+                          </td>
+                          {isMaster && (
+                            <td className="px-6 py-4 text-right">
+                              <div className="flex items-center justify-end gap-1">
+                                <button onClick={() => openEditStoreModal(store)} className="p-1.5 text-indigo-400 hover:bg-indigo-500/10 rounded-lg"><Pencil className="w-4 h-4" /></button>
+                                {isPaired && <button onClick={() => handleDecommission(store.storeId)} className="p-1.5 text-rose-400 hover:bg-rose-500/10 rounded-lg"><Trash2 className="w-4 h-4" /></button>}
                               </div>
                             </td>
-
-                            <td className="px-6 py-4 font-mono text-slate-400">
-                              {store.openTime} - {store.closeTime}
-                            </td>
-
-                            <td className="px-6 py-4">
-                              <span className="inline-block px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-800 text-slate-300 border border-slate-700">
-                                {store.payoutModel === "FIXED" && `Flat ₹${store.baseRent.toLocaleString()}`}
-                                {(store.payoutModel === "PER_SCAN" || store.payoutModel === "PERFORMANCE") && `₹${store.ratePerScan || 2}/scan`}
-                                {store.payoutModel === "HYBRID" && `₹${store.baseRent} base + ₹${store.ratePerScan || 2}/scan`}
-                              </span>
-                            </td>
-
-                            <td className="px-6 py-4">
-                              <span className="font-mono font-bold text-emerald-400">
-                                {storeMetrics.total_qr_scans.toLocaleString()}
-                              </span>
-                              <p className="text-[10px] text-slate-500 font-mono mt-0.5">
-                                {storeMetrics.ad_qr_scans} Ad • {storeMetrics.mystery_qr_scans} Surprise
-                              </p>
-                            </td>
-
-                            <td className="px-6 py-4 font-bold text-emerald-400 font-mono text-sm">
-                              ₹{dynamicRent.toLocaleString()}
-                            </td>
-
-                            <td className="px-6 py-4">
-                              {isPaired ? (
-                                <span
-                                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-semibold ${
-                                    isOnline
-                                      ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                                      : "bg-amber-500/10 text-amber-400 border border-amber-500/20"
-                                  }`}
-                                >
-                                  <span className="w-1.5 h-1.5 rounded-full bg-current" />
-                                  {isOnline ? "Active" : "Offline"}
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-800 text-slate-400 border border-slate-700">
-                                  Unpaired
-                                </span>
-                              )}
-                            </td>
-
-                            {isMaster && (
-                              <td className="px-6 py-4 text-right">
-                                <div className="flex items-center justify-end gap-1">
-                                  <button
-                                    onClick={() => openEditStoreModal(store)}
-                                    className="p-1.5 text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition"
-                                    title="Edit Store Profile &amp; Terms"
-                                  >
-                                    <Pencil className="w-4 h-4" />
-                                  </button>
-                                  {isPaired && (
-                                    <button
-                                      onClick={() => handleDecommission(store.storeId)}
-                                      title="Trigger Hardware Kill Switch"
-                                      className="p-1.5 text-rose-400 hover:bg-rose-500/10 rounded-lg transition"
-                                    >
-                                      <Trash2 className="w-4 h-4" />
-                                    </button>
-                                  )}
-                                </div>
-                              </td>
-                            )}
-                          </tr>
-                        );
-                      })
-                    )}
+                          )}
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -1832,48 +1705,29 @@ export default function OperationsPortal() {
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-                    Total Store Payouts (Est.)
-                  </p>
-                  <p className="text-2xl font-bold mt-1 text-white">
-                    ₹{totalDynamicRentalObligations.toLocaleString()}
-                  </p>
+                  <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Total Store Payouts (Est.)</p>
+                  <p className="text-2xl font-bold mt-1 text-white">₹{totalDynamicRentalObligations.toLocaleString()}</p>
                 </div>
                 <Receipt className="w-8 h-8 text-slate-600" />
               </div>
-
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-                    Disbursed This Month
-                  </p>
-                  <p className="text-2xl font-bold mt-1 text-emerald-400">
-                    ₹{totalPaidOut.toLocaleString()}
-                  </p>
+                  <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Disbursed This Month</p>
+                  <p className="text-2xl font-bold mt-1 text-emerald-400">₹{totalPaidOut.toLocaleString()}</p>
                 </div>
                 <Wallet className="w-8 h-8 text-emerald-500/30" />
               </div>
-
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-                    Ad Contracts Revenue
-                  </p>
-                  <p className="text-2xl font-bold mt-1 text-indigo-400">
-                    ₹{totalDynamicRevenue.toLocaleString()}
-                  </p>
+                  <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Total Ad Revenue</p>
+                  <p className="text-2xl font-bold mt-1 text-indigo-400">₹{totalDynamicRevenue.toLocaleString()}</p>
                 </div>
                 <TrendingUp className="w-8 h-8 text-indigo-500/30" />
               </div>
-
               <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-                    Net Fleet Margin
-                  </p>
-                  <p className="text-2xl font-bold mt-1 text-amber-400">
-                    ₹{netEstimatedProfit.toLocaleString()}
-                  </p>
+                  <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Net Fleet Margin</p>
+                  <p className="text-2xl font-bold mt-1 text-amber-400">₹{netEstimatedProfit.toLocaleString()}</p>
                 </div>
                 <IndianRupee className="w-8 h-8 text-amber-500/30" />
               </div>
@@ -1883,9 +1737,7 @@ export default function OperationsPortal() {
               <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
                 <div>
                   <h3 className="text-sm font-bold text-white">Shopkeeper Settlement Ledger</h3>
-                  <p className="text-xs text-slate-400">
-                    Telemetry-adjusted dynamic settlements for billing period {currentMonth}.
-                  </p>
+                  <p className="text-xs text-slate-400">Telemetry-adjusted dynamic settlements for billing period {currentMonth}.</p>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -1913,114 +1765,45 @@ export default function OperationsPortal() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60">
-                    {stores.length === 0 ? (
-                      <tr>
-                        <td colSpan={isMaster ? 7 : 6} className="px-6 py-8 text-center text-slate-500">
-                          No store profiles onboarded yet.
-                        </td>
-                      </tr>
-                    ) : (
-                      stores.map((store) => {
-                        const payout = payouts[store.storeId];
-                        const isPaid = payout?.status === "PAID";
-                        const dynamicAmount = calculateStorePayout(store);
-                        const storeMetrics = analyticsMap[store.storeId] || {
-                          total_qr_scans: 0,
-                          ad_qr_scans: 0,
-                          mystery_qr_scans: 0,
-                        };
+                    {stores.map((store) => {
+                      const payout = payouts[store.storeId];
+                      const isPaid = payout?.status === "PAID";
+                      const dynamicAmount = calculateStorePayout(store);
+                      const storeMetrics = analyticsMap[store.storeId] || { total_qr_scans: 0 };
 
-                        return (
-                          <tr key={store.storeId} className="hover:bg-slate-800/30 transition">
-                            <td className="px-6 py-4">
-                              <p className="font-bold text-white">{store.storeName}</p>
-                              <p className="text-slate-400 font-mono text-[11px]">{store.storeId} • {store.ownerName}</p>
-                            </td>
-
-                            <td className="px-6 py-4 font-mono text-slate-300">
-                              {store.upiId ? (
-                                <span className="bg-slate-950 px-2 py-1 rounded border border-slate-800 text-indigo-300">
-                                  {store.upiId}
-                                </span>
-                              ) : (
-                                <span className="text-slate-500">Cash / Direct</span>
-                              )}
-                            </td>
-
-                            <td className="px-6 py-4">
-                              <div className="flex items-center gap-1.5">
-                                <span className="text-[11px] text-slate-300 font-semibold">
-                                  {store.payoutModel === "PER_SCAN" || store.payoutModel === "PERFORMANCE"
-                                    ? "Per Scan"
-                                    : store.payoutModel === "HYBRID"
-                                    ? "Hybrid"
-                                    : "Flat Monthly"}
-                                </span>
-                                {isMaster && (
-                                  <button
-                                    onClick={() => openEditStoreModal(store)}
-                                    className="text-slate-500 hover:text-indigo-400 p-0.5"
-                                    title="Edit Terms"
-                                  >
-                                    <Pencil className="w-3 h-3" />
-                                  </button>
-                                )}
-                              </div>
-                            </td>
-
-                            <td className="px-6 py-4 font-mono text-emerald-400 font-semibold">
-                              {storeMetrics.total_qr_scans.toLocaleString()} scans
-                            </td>
-
-                            <td className="px-6 py-4 font-bold text-emerald-400 text-sm font-mono">
-                              ₹{dynamicAmount.toLocaleString()}
-                            </td>
-
-                            <td className="px-6 py-4">
-                              {isPaid ? (
-                                <div>
-                                  <span className="inline-flex items-center gap-1 text-emerald-400 font-semibold bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded text-[11px]">
-                                    <CheckCircle className="w-3 h-3" /> Paid (₹{payout.amount.toLocaleString()})
-                                  </span>
-                                  <p className="text-[10px] text-slate-500 font-mono mt-0.5">
-                                    Ref: {payout.transactionRef}
-                                  </p>
-                                </div>
-                              ) : (
-                                <span className="inline-flex items-center text-amber-400 font-semibold bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded text-[11px]">
-                                  Pending Payment
-                                </span>
-                              )}
-                            </td>
-
-                            {isMaster && (
-                              <td className="px-6 py-4 text-right">
-                                {!isPaid ? (
-                                  <button
-                                    onClick={() => openDisburseModal(store)}
-                                    className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold transition shadow"
-                                  >
-                                    Disburse
-                                  </button>
-                                ) : (
-                                  <button
-                                    onClick={() => {
-                                      if (confirm(`Reset settlement for ${store.storeName}?`)) {
-                                        const docId = `${currentMonth}_${store.storeId}`;
-                                        deleteDoc(doc(db, "payouts", docId));
-                                      }
-                                    }}
-                                    className="text-slate-500 hover:text-rose-400 text-xs transition"
-                                  >
-                                    Reset
-                                  </button>
-                                )}
-                              </td>
+                      return (
+                        <tr key={store.storeId} className="hover:bg-slate-800/30 transition">
+                          <td className="px-6 py-4">
+                            <p className="font-bold text-white">{store.storeName}</p>
+                            <p className="text-slate-400 font-mono text-[11px]">{store.storeId} • {store.ownerName}</p>
+                          </td>
+                          <td className="px-6 py-4 font-mono text-slate-300">{store.upiId || "None"}</td>
+                          <td className="px-6 py-4">{store.payoutModel}</td>
+                          <td className="px-6 py-4 font-mono text-emerald-400 font-semibold">{storeMetrics.total_qr_scans} scans</td>
+                          <td className="px-6 py-4 font-bold text-emerald-400 text-sm font-mono">₹{dynamicAmount.toLocaleString()}</td>
+                          <td className="px-6 py-4">
+                            {isPaid ? (
+                              <span className="text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded text-[11px]">Paid</span>
+                            ) : (
+                              <span className="text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded text-[11px]">Pending</span>
                             )}
-                          </tr>
-                        );
-                      })
-                    )}
+                          </td>
+                          {isMaster && (
+                            <td className="px-6 py-4 text-right">
+                              {!isPaid ? (
+                                <button onClick={() => openDisburseModal(store)} className="px-3 py-1 bg-emerald-600 text-white rounded-lg text-xs font-semibold">
+                                  Disburse
+                                </button>
+                              ) : (
+                                <button onClick={() => deleteDoc(doc(db, "payouts", `${currentMonth}_${store.storeId}`))} className="text-slate-500 hover:text-rose-400 text-xs">
+                                  Reset
+                                </button>
+                              )}
+                            </td>
+                          )}
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -2029,859 +1812,170 @@ export default function OperationsPortal() {
         )}
       </main>
 
-      {/* MODAL 1: EDIT STORE PROFILE & TERMS (MASTER ONLY) */}
+      {/* MODAL 1: EDIT STORE PROFILE & TERMS */}
       {isMaster && editingStore && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                <Pencil className="w-5 h-5 text-indigo-400" />
-                <h3 className="text-base font-bold text-white">Edit Store: {editingStore.storeId}</h3>
-              </div>
-              <button
-                onClick={() => setEditingStore(null)}
-                className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <h3 className="text-base font-bold text-white">Edit Store: {editingStore.storeId}</h3>
+              <button onClick={() => setEditingStore(null)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
             </div>
-
             <form onSubmit={handleUpdateStore} className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1">Store Name</label>
-                  <input
-                    type="text"
-                    value={editStoreName}
-                    onChange={(e) => setEditStoreName(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white focus:outline-none focus:border-indigo-500"
-                    required
-                  />
+                  <input type="text" value={editStoreName} onChange={(e) => setEditStoreName(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white" required />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1">Owner Name</label>
-                  <input
-                    type="text"
-                    value={editStoreOwner}
-                    onChange={(e) => setEditStoreOwner(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white focus:outline-none focus:border-indigo-500"
-                  />
+                  <input type="text" value={editStoreOwner} onChange={(e) => setEditStoreOwner(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white" />
                 </div>
               </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Phone</label>
-                  <input
-                    type="tel"
-                    value={editStorePhone}
-                    onChange={(e) => setEditStorePhone(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">City</label>
-                  <input
-                    type="text"
-                    value={editStoreCity}
-                    onChange={(e) => setEditStoreCity(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Open Time (HH:MM)</label>
-                  <input
-                    type="text"
-                    value={editStoreOpen}
-                    onChange={(e) => setEditStoreOpen(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono focus:outline-none focus:border-indigo-500"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Close Time (HH:MM)</label>
-                  <input
-                    type="text"
-                    value={editStoreClose}
-                    onChange={(e) => setEditStoreClose(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono focus:outline-none focus:border-indigo-500"
-                    required
-                  />
-                </div>
-              </div>
-
               <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-3">
-                <label className="block text-xs font-bold text-indigo-400">
-                  Agreed Payout Model
-                </label>
+                <label className="block text-xs font-bold text-indigo-400">Agreed Payout Model</label>
                 <div className="grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditStoreModel("FIXED");
-                      setEditStoreRateScan(0);
-                    }}
-                    className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition border ${
-                      editStoreModel === "FIXED"
-                        ? "bg-indigo-600 text-white border-indigo-500"
-                        : "bg-slate-900 text-slate-400 border-slate-800"
-                    }`}
-                  >
-                    Flat Monthly
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditStoreModel("PER_SCAN");
-                      setEditStoreBaseRent(0);
-                    }}
-                    className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition border ${
-                      editStoreModel === "PER_SCAN"
-                        ? "bg-indigo-600 text-white border-indigo-500"
-                        : "bg-slate-900 text-slate-400 border-slate-800"
-                    }`}
-                  >
-                    Per Scan
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setEditStoreModel("HYBRID")}
-                    className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition border ${
-                      editStoreModel === "HYBRID"
-                        ? "bg-indigo-600 text-white border-indigo-500"
-                        : "bg-slate-900 text-slate-400 border-slate-800"
-                    }`}
-                  >
-                    Hybrid
-                  </button>
+                  <button type="button" onClick={() => { setEditStoreModel("FIXED"); setEditStoreRateScan(0); }} className={`py-1.5 px-2 rounded-lg text-xs font-semibold ${editStoreModel === "FIXED" ? "bg-indigo-600 text-white" : "bg-slate-900 text-slate-400"}`}>Flat Monthly</button>
+                  <button type="button" onClick={() => { setEditStoreModel("PER_SCAN"); setEditStoreBaseRent(0); }} className={`py-1.5 px-2 rounded-lg text-xs font-semibold ${editStoreModel === "PER_SCAN" ? "bg-indigo-600 text-white" : "bg-slate-900 text-slate-400"}`}>Per Scan</button>
+                  <button type="button" onClick={() => setEditStoreModel("HYBRID")} className={`py-1.5 px-2 rounded-lg text-xs font-semibold ${editStoreModel === "HYBRID" ? "bg-indigo-600 text-white" : "bg-slate-900 text-slate-400"}`}>Hybrid</button>
                 </div>
-
-                <div className="pt-1">
-                  {editStoreModel === "FIXED" && (
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1">
-                        Fixed Monthly Rent (₹)
-                      </label>
-                      <input
-                        type="number"
-                        value={editStoreBaseRent}
-                        onChange={(e) => setEditStoreBaseRent(Number(e.target.value))}
-                        className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono focus:outline-none focus:border-indigo-500"
-                        placeholder="2000"
-                      />
-                      <p className="text-[11px] text-slate-500 mt-1">Flat fixed monthly rent regardless of visitor scans.</p>
-                    </div>
-                  )}
-
-                  {editStoreModel === "PER_SCAN" && (
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1">
-                        Rate / QR Scan (₹)
-                      </label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={editStoreRateScan}
-                        onChange={(e) => setEditStoreRateScan(Number(e.target.value))}
-                        className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono focus:outline-none focus:border-indigo-500"
-                        placeholder="2.00"
-                      />
-                      <p className="text-[11px] text-slate-500 mt-1">
-                        Performance payout based entirely on audience QR code scans. No base rent.
-                      </p>
-                    </div>
-                  )}
-
-                  {editStoreModel === "HYBRID" && (
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-300 mb-1">
-                          Guaranteed Base Rent (₹)
-                        </label>
-                        <input
-                          type="number"
-                          value={editStoreBaseRent}
-                          onChange={(e) => setEditStoreBaseRent(Number(e.target.value))}
-                          className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono focus:outline-none focus:border-indigo-500"
-                          placeholder="2000"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-300 mb-1">
-                          + Bonus / QR Scan (₹)
-                        </label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={editStoreRateScan}
-                          onChange={(e) => setEditStoreRateScan(Number(e.target.value))}
-                          className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono focus:outline-none focus:border-indigo-500"
-                          placeholder="1.00"
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Shopkeeper UPI ID</label>
-                  <input
-                    type="text"
-                    value={editStoreUpi}
-                    onChange={(e) => setEditStoreUpi(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono focus:outline-none focus:border-indigo-500"
-                  />
-                </div>
+                {editStoreModel !== "PER_SCAN" && (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Fixed Monthly Rent (₹)</label>
+                    <input type="number" value={editStoreBaseRent} onChange={(e) => setEditStoreBaseRent(Number(e.target.value))} className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono" />
+                  </div>
+                )}
+                {editStoreModel !== "FIXED" && (
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Rate / QR Scan (₹)</label>
+                    <input type="number" step="0.01" value={editStoreRateScan} onChange={(e) => setEditStoreRateScan(Number(e.target.value))} className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono" />
+                  </div>
+                )}
               </div>
-
               <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setEditingStore(null)}
-                  className="px-4 py-2 rounded-lg bg-slate-800 text-xs font-semibold text-slate-300 hover:bg-slate-700"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-lg bg-indigo-600 text-xs font-semibold text-white hover:bg-indigo-500"
-                >
-                  Save Store Changes
-                </button>
+                <button type="button" onClick={() => setEditingStore(null)} className="px-4 py-2 rounded-lg bg-slate-800 text-xs font-semibold text-slate-300">Cancel</button>
+                <button type="submit" className="px-4 py-2 rounded-lg bg-indigo-600 text-xs font-semibold text-white">Save Store Changes</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* MODAL 2: EDIT CAMPAIGN & CONTRACT (MASTER ONLY) */}
+      {/* MODAL 2: EDIT CAMPAIGN */}
       {isMaster && editingAd && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                <Pencil className="w-5 h-5 text-indigo-400" />
-                <h3 className="text-base font-bold text-white">Edit Campaign: Ad #{editingAd.id}</h3>
-              </div>
-              <button
-                onClick={() => setEditingAd(null)}
-                className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <h3 className="text-base font-bold text-white">Edit Campaign: Ad #{editingAd.id}</h3>
+              <button onClick={() => setEditingAd(null)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
             </div>
-
             <form onSubmit={handleUpdateAd} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">Campaign Title</label>
-                <input
-                  type="text"
-                  value={editAdTitle}
-                  onChange={(e) => setEditAdTitle(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white focus:outline-none focus:border-indigo-500"
-                  required
-                />
+                <input type="text" value={editAdTitle} onChange={(e) => setEditAdTitle(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white" required />
               </div>
-
-              <div className="grid grid-cols-2 gap-3 p-3 bg-slate-950 border border-slate-800 rounded-xl">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Billing Structure</label>
-                  <select
-                    value={editAdPricingModel}
-                    onChange={(e) => setEditAdPricingModel(e.target.value as "FLAT_CONTRACT" | "PER_PLAY")}
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-indigo-500"
-                  >
-                    <option value="FLAT_CONTRACT">Flat Contract Retainer</option>
-                    <option value="PER_PLAY">Performance (Per 1k Plays)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    {editAdPricingModel === "FLAT_CONTRACT" ? "Agreed Fee (₹)" : "Rate / 1k Plays (₹)"}
-                  </label>
-                  <input
-                    type="number"
-                    value={editAdContractAmount}
-                    onChange={(e) => setEditAdContractAmount(Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono focus:outline-none focus:border-indigo-500"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Advertiser Portal PIN</label>
-                <input
-                  type="text"
-                  value={editAdClientPin}
-                  onChange={(e) => setEditAdClientPin(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono focus:outline-none focus:border-indigo-500"
-                  placeholder="1234"
-                  required
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Duration (Seconds)</label>
-                  <input
-                    type="number"
-                    value={editAdDuration}
-                    onChange={(e) => setEditAdDuration(parseInt(e.target.value, 10))}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white focus:outline-none focus:border-indigo-500"
-                    required
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Action / QR Target URL</label>
-                  <input
-                    type="url"
-                    value={editAdActionUrl}
-                    onChange={(e) => setEditAdActionUrl(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white focus:outline-none focus:border-indigo-500"
-                    placeholder="https://..."
-                  />
-                </div>
-              </div>
-
               <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setEditingAd(null)}
-                  className="px-4 py-2 rounded-lg bg-slate-800 text-xs font-semibold text-slate-300 hover:bg-slate-700"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-lg bg-indigo-600 text-xs font-semibold text-white hover:bg-indigo-500"
-                >
-                  Save Contract
-                </button>
+                <button type="button" onClick={() => setEditingAd(null)} className="px-4 py-2 rounded-lg bg-slate-800 text-xs font-semibold text-slate-300">Cancel</button>
+                <button type="submit" className="px-4 py-2 rounded-lg bg-indigo-600 text-xs font-semibold text-white">Save Contract</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* MODAL 3: DISBURSE SETTLEMENT (MASTER ONLY) */}
+      {/* MODAL 3: DISBURSE SETTLEMENT */}
       {isMaster && payoutModalStore && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                <IndianRupee className="w-5 h-5 text-emerald-400" />
-                <h3 className="text-base font-bold text-white">Record Rent Settlement</h3>
-              </div>
-              <button
-                onClick={() => setPayoutModalStore(null)}
-                className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <h3 className="text-base font-bold text-white">Record Rent Settlement</h3>
+              <button onClick={() => setPayoutModalStore(null)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
             </div>
-
             <form onSubmit={handleRecordPayout} className="space-y-4">
-              <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-1">
-                <p className="text-xs text-slate-400">Beneficiary:</p>
-                <p className="text-sm font-bold text-white">{payoutModalStore.store.storeName} ({payoutModalStore.store.ownerName})</p>
-                <p className="text-xs text-slate-400 font-mono">UPI: {payoutModalStore.store.upiId || "None provided"}</p>
-                <p className="text-[11px] text-slate-500 mt-1">
-                  Formula Calculated: ₹{payoutModalStore.calculatedAmount.toLocaleString()} ({payoutModalStore.store.payoutModel === "PER_SCAN" ? "Per Scan" : payoutModalStore.store.payoutModel})
-                </p>
-              </div>
-
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Final Settlement Amount (₹) — Customizable
-                </label>
-                <input
-                  type="number"
-                  value={overridePayoutAmount}
-                  onChange={(e) => setOverridePayoutAmount(Number(e.target.value))}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-base font-bold text-emerald-400 font-mono focus:outline-none focus:border-emerald-500"
-                  required
-                />
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Final Settlement Amount (₹)</label>
+                <input type="number" value={overridePayoutAmount} onChange={(e) => setOverridePayoutAmount(Number(e.target.value))} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-base font-bold text-emerald-400 font-mono" required />
               </div>
-
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Payment Method
-                </label>
-                <select
-                  value={payMethod}
-                  onChange={(e) => setPayMethod(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white focus:outline-none focus:border-emerald-500"
-                >
-                  <option value="UPI">UPI Transfer (PhonePe / GPay / Paytm)</option>
-                  <option value="NEFT/IMPS">Bank NEFT / IMPS</option>
-                  <option value="Cash">Cash Handover</option>
-                  <option value="Cheque">Cheque</option>
-                </select>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Transaction Ref / UTR</label>
+                <input type="text" value={payRef} onChange={(e) => setPayRef(e.target.value)} placeholder="e.g. UPI-123456" className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono" required />
               </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Transaction Reference / UTR Number
-                </label>
-                <input
-                  type="text"
-                  value={payRef}
-                  onChange={(e) => setPayRef(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono focus:outline-none focus:border-emerald-500"
-                  placeholder="e.g. UPI-938210384918"
-                  required
-                />
-              </div>
-
               <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setPayoutModalStore(null)}
-                  className="px-4 py-2 rounded-lg bg-slate-800 text-xs font-semibold text-slate-300 hover:bg-slate-700"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-lg bg-emerald-600 text-xs font-semibold text-white hover:bg-emerald-500"
-                >
-                  Confirm &amp; Seal Settlement
-                </button>
+                <button type="button" onClick={() => setPayoutModalStore(null)} className="px-4 py-2 rounded-lg bg-slate-800 text-xs font-semibold text-slate-300">Cancel</button>
+                <button type="submit" className="px-4 py-2 rounded-lg bg-emerald-600 text-xs font-semibold text-white">Confirm Settlement</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* MODAL 4: ONBOARD STORE (MASTER ONLY) */}
+      {/* MODAL 4: ONBOARD STORE */}
       {isMaster && newStoreModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                <Store className="w-5 h-5 text-emerald-400" />
-                <h3 className="text-base font-bold text-white">Onboard Store &amp; Configure Terms</h3>
-              </div>
-              <button
-                onClick={() => setNewStoreModal(false)}
-                className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <h3 className="text-base font-bold text-white">Onboard Store &amp; Configure Terms</h3>
+              <button onClick={() => setNewStoreModal(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
             </div>
-
             <form onSubmit={handleCreateStore} className="space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Store Identifier (Exact ID technician enters on tablet)
-                </label>
-                <input
-                  type="text"
-                  value={formStoreId}
-                  onChange={(e) => setFormStoreId(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono focus:outline-none focus:border-emerald-500"
-                  placeholder="e.g. Ludhiana_Store_02"
-                  required
-                />
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Store Identifier</label>
+                <input type="text" value={formStoreId} onChange={(e) => setFormStoreId(e.target.value)} placeholder="e.g. Ludhiana_Store_02" className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono" required />
               </div>
-
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1">Store Name</label>
-                  <input
-                    type="text"
-                    value={formStoreName}
-                    onChange={(e) => setFormStoreName(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white focus:outline-none focus:border-emerald-500"
-                    placeholder="e.g. Verma Grocers"
-                    required
-                  />
+                  <input type="text" value={formStoreName} onChange={(e) => setFormStoreName(e.target.value)} placeholder="Verma Grocers" className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white" required />
                 </div>
-
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Owner Name</label>
-                  <input
-                    type="text"
-                    value={formOwnerName}
-                    onChange={(e) => setFormOwnerName(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white focus:outline-none focus:border-emerald-500"
-                    placeholder="e.g. Rajesh Verma"
-                  />
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">City</label>
+                  <input type="text" value={formCity} onChange={(e) => setFormCity(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white" />
                 </div>
               </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Phone Number</label>
-                  <input
-                    type="tel"
-                    value={formPhone}
-                    onChange={(e) => setFormPhone(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono focus:outline-none focus:border-emerald-500"
-                    placeholder="+91 98765 43210"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">City / Area</label>
-                  <input
-                    type="text"
-                    value={formCity}
-                    onChange={(e) => setFormCity(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white focus:outline-none focus:border-emerald-500"
-                    placeholder="Ludhiana"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Open Time (HH:MM)</label>
-                  <input
-                    type="text"
-                    value={formOpenTime}
-                    onChange={(e) => setFormOpenTime(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono focus:outline-none focus:border-emerald-500"
-                    placeholder="09:00"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Close Time (HH:MM)</label>
-                  <input
-                    type="text"
-                    value={formCloseTime}
-                    onChange={(e) => setFormCloseTime(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono focus:outline-none focus:border-emerald-500"
-                    placeholder="21:30"
-                  />
-                </div>
-              </div>
-
-              <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-3">
-                <label className="block text-xs font-bold text-emerald-400">
-                  Agreed Payout Agreement Model
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFormPayoutModel("FIXED");
-                      setFormRatePerScan(0);
-                    }}
-                    className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition border ${
-                      formPayoutModel === "FIXED"
-                        ? "bg-emerald-600 text-white border-emerald-500"
-                        : "bg-slate-900 text-slate-400 border-slate-800"
-                    }`}
-                  >
-                    Flat Monthly
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFormPayoutModel("PER_SCAN");
-                      setFormBaseRent(0);
-                    }}
-                    className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition border ${
-                      formPayoutModel === "PER_SCAN"
-                        ? "bg-emerald-600 text-white border-emerald-500"
-                        : "bg-slate-900 text-slate-400 border-slate-800"
-                    }`}
-                  >
-                    Per Scan
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setFormPayoutModel("HYBRID");
-                    }}
-                    className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition border ${
-                      formPayoutModel === "HYBRID"
-                        ? "bg-emerald-600 text-white border-emerald-500"
-                        : "bg-slate-900 text-slate-400 border-slate-800"
-                    }`}
-                  >
-                    Hybrid
-                  </button>
-                </div>
-
-                <div className="pt-1">
-                  {formPayoutModel === "FIXED" && (
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1">
-                        Fixed Monthly Rent (₹)
-                      </label>
-                      <input
-                        type="number"
-                        value={formBaseRent}
-                        onChange={(e) => setFormBaseRent(Number(e.target.value))}
-                        className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono focus:outline-none focus:border-emerald-500"
-                        placeholder="2000"
-                      />
-                      <p className="text-[11px] text-slate-500 mt-1">Flat fixed monthly rent regardless of visitor scans.</p>
-                    </div>
-                  )}
-
-                  {formPayoutModel === "PER_SCAN" && (
-                    <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1">
-                        Rate / QR Scan (₹)
-                      </label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={formRatePerScan}
-                        onChange={(e) => setFormRatePerScan(Number(e.target.value))}
-                        className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono focus:outline-none focus:border-emerald-500"
-                        placeholder="2.00"
-                      />
-                      <p className="text-[11px] text-slate-500 mt-1">
-                        Pure performance. Payout = Total Verified QR Scans × Rate. No base rent.
-                      </p>
-                    </div>
-                  )}
-
-                  {formPayoutModel === "HYBRID" && (
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-300 mb-1">
-                          Guaranteed Base Rent (₹)
-                        </label>
-                        <input
-                          type="number"
-                          value={formBaseRent}
-                          onChange={(e) => setFormBaseRent(Number(e.target.value))}
-                          className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono focus:outline-none focus:border-emerald-500"
-                          placeholder="2000"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xs font-semibold text-slate-300 mb-1">
-                          + Bonus / QR Scan (₹)
-                        </label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={formRatePerScan}
-                          onChange={(e) => setFormRatePerScan(Number(e.target.value))}
-                          className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono focus:outline-none focus:border-emerald-500"
-                          placeholder="1.00"
-                        />
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Shopkeeper UPI ID</label>
-                  <input
-                    type="text"
-                    value={formUpiId}
-                    onChange={(e) => setFormUpiId(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono focus:outline-none focus:border-emerald-500"
-                    placeholder="verma@upi"
-                  />
-                </div>
-              </div>
-
               <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setNewStoreModal(false)}
-                  className="px-4 py-2 rounded-lg bg-slate-800 text-xs font-semibold text-slate-300 hover:bg-slate-700"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-lg bg-emerald-600 text-xs font-semibold text-white hover:bg-emerald-500"
-                >
-                  Save Store Profile
-                </button>
+                <button type="button" onClick={() => setNewStoreModal(false)} className="px-4 py-2 rounded-lg bg-slate-800 text-xs font-semibold text-slate-300">Cancel</button>
+                <button type="submit" className="px-4 py-2 rounded-lg bg-emerald-600 text-xs font-semibold text-white">Save Store Profile</button>
               </div>
             </form>
           </div>
         </div>
       )}
 
-      {/* MODAL 5: NEW AD CAMPAIGN (MASTER ONLY) */}
+      {/* MODAL 5: NEW AD CAMPAIGN */}
       {isMaster && newAdModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                <Film className="w-5 h-5 text-indigo-400" />
-                <h3 className="text-base font-bold text-white">Create Ad Campaign</h3>
-              </div>
-              <button
-                onClick={() => setNewAdModal(false)}
-                className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <h3 className="text-base font-bold text-white">Create Ad Campaign</h3>
+              <button onClick={() => setNewAdModal(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
             </div>
-
             <form onSubmit={handleCreateAd} className="space-y-4">
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Ad Numeric ID
-                  </label>
-                  <input
-                    type="number"
-                    value={adNumericId}
-                    onChange={(e) => setAdNumericId(parseInt(e.target.value, 10))}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono focus:outline-none focus:border-indigo-500"
-                    required
-                  />
-                  <p className="text-[10px] text-slate-500 mt-1">Unique DB integer</p>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Numeric ID</label>
+                  <input type="number" value={adNumericId} onChange={(e) => setAdNumericId(parseInt(e.target.value, 10))} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono" required />
                 </div>
-
                 <div className="col-span-2">
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Campaign / Ad Title
-                  </label>
-                  <input
-                    type="text"
-                    value={adTitle}
-                    onChange={(e) => setAdTitle(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white focus:outline-none focus:border-indigo-500"
-                    placeholder="e.g. Kalyan Jewellers 15s"
-                    required
-                  />
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Campaign Title</label>
+                  <input type="text" value={adTitle} onChange={(e) => setAdTitle(e.target.value)} placeholder="e.g. Kalyan Jewellers 15s" className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white" required />
                 </div>
               </div>
-
-              <div className="grid grid-cols-2 gap-3 p-3 bg-slate-950 border border-slate-800 rounded-xl">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Billing Model</label>
-                  <select
-                    value={adPricingModel}
-                    onChange={(e) =>
-                      setAdPricingModel(e.target.value as "FLAT_CONTRACT" | "PER_PLAY")
-                    }
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white focus:outline-none focus:border-indigo-500"
-                  >
-                    <option value="FLAT_CONTRACT">Flat Contract Fee</option>
-                    <option value="PER_PLAY">Performance (Per 1k Plays)</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    {adPricingModel === "FLAT_CONTRACT" ? "Contract Value (₹)" : "Rate / 1k Plays (₹)"}
-                  </label>
-                  <input
-                    type="number"
-                    value={adContractAmount}
-                    onChange={(e) => setAdContractAmount(Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono focus:outline-none focus:border-indigo-500"
-                    placeholder="10000"
-                    required
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Advertiser Portal PIN</label>
-                <input
-                  type="text"
-                  value={adClientPin}
-                  onChange={(e) => setEditAdClientPin(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono focus:outline-none focus:border-indigo-500"
-                  placeholder="1234"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Upload MP4 Video File
-                </label>
-                <input
-                  type="file"
-                  accept="video/mp4,video/mkv,video/webm"
-                  onChange={(e) => setVideoFile(e.target.files?.[0] || null)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-slate-300 file:mr-3 file:py-1 file:px-2.5 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Or Direct Video URL (Optional fallback)
-                </label>
-                <input
-                  type="url"
-                  value={adVideoUrl}
-                  onChange={(e) => setAdVideoUrl(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white focus:outline-none focus:border-indigo-500"
-                  placeholder="https://.../video.mp4"
-                />
-              </div>
-
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Duration (Seconds)</label>
-                  <input
-                    type="number"
-                    value={adDuration}
-                    onChange={(e) => setAdDuration(parseInt(e.target.value, 10))}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white focus:outline-none focus:border-indigo-500"
-                    required
-                  />
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Contract Value (₹)</label>
+                  <input type="number" value={adContractAmount} onChange={(e) => setAdContractAmount(Number(e.target.value))} className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono" required />
                 </div>
-
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Action / QR Target URL</label>
-                  <input
-                    type="url"
-                    value={adActionUrl}
-                    onChange={(e) => setAdActionUrl(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white focus:outline-none focus:border-indigo-500"
-                    placeholder="https://brand.com/deal"
-                  />
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Client PIN</label>
+                  <input type="text" value={adClientPin} onChange={(e) => setAdClientPin(e.target.value)} placeholder="1234" className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono" required />
                 </div>
               </div>
-
-              {uploadProgress !== null && (
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs text-slate-300">
-                    <span>Uploading Video to Cloud Storage...</span>
-                    <span>{uploadProgress}%</span>
-                  </div>
-                  <div className="w-full bg-slate-950 rounded-full h-2 overflow-hidden border border-slate-800">
-                    <div
-                      className="bg-indigo-600 h-full transition-all duration-200"
-                      style={{ width: `${uploadProgress}%` }}
-                    />
-                  </div>
-                </div>
-              )}
-
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Upload MP4 Video</label>
+                <input type="file" accept="video/mp4" onChange={(e) => setVideoFile(e.target.files?.[0] || null)} className="w-full text-xs text-slate-400 file:mr-3 file:py-1 file:px-2.5 file:rounded-md file:border-0 file:bg-indigo-600 file:text-white" />
+              </div>
               <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setNewAdModal(false)}
-                  className="px-4 py-2 rounded-lg bg-slate-800 text-xs font-semibold text-slate-300 hover:bg-slate-700"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={uploadProgress !== null}
-                  className="px-4 py-2 rounded-lg bg-indigo-600 text-xs font-semibold text-white hover:bg-indigo-500 shadow-lg shadow-indigo-600/20 disabled:opacity-50"
-                >
-                  {uploadProgress !== null ? "Uploading..." : "Publish &amp; Sync to Fleet"}
-                </button>
+                <button type="button" onClick={() => setNewAdModal(false)} className="px-4 py-2 rounded-lg bg-slate-800 text-xs font-semibold text-slate-300">Cancel</button>
+                <button type="submit" disabled={uploadProgress !== null} className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white">Publish &amp; Sync</button>
               </div>
             </form>
           </div>
@@ -2894,137 +1988,158 @@ export default function OperationsPortal() {
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-3xl w-full p-4 space-y-3">
             <div className="flex items-center justify-between">
               <h4 className="text-sm font-bold text-white">Live Screenshot: {selectedScreenshot.storeId}</h4>
-              <button
-                onClick={() => setSelectedScreenshot(null)}
-                className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <button onClick={() => setSelectedScreenshot(null)} className="p-1 text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
             </div>
             <div className="rounded-lg overflow-hidden bg-black border border-slate-800 aspect-video flex items-center justify-center">
-              <img
-                src={selectedScreenshot.image}
-                alt="Full Proof of Play"
-                className="w-full h-full object-contain"
-              />
+              <img src={selectedScreenshot.image} alt="Screenshot" className="w-full h-full object-contain" />
             </div>
           </div>
         </div>
       )}
 
-      {/* MODAL 7: GLOBAL OTA (MASTER ONLY) */}
+      {/* MODAL 7: GLOBAL OTA */}
       {isMaster && otaModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                <DownloadCloud className="w-5 h-5 text-indigo-400" />
-                <h3 className="text-base font-bold text-white">Deploy Fleet OTA Update</h3>
+              <h3 className="text-base font-bold text-white">Deploy Fleet OTA Update</h3>
+              <button onClick={() => setOtaModalOpen(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+            </div>
+            <form onSubmit={handleDeployGlobalOta} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Target Version Code</label>
+                <input type="number" value={otaVersionCode} onChange={(e) => setOtaVersionCode(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono" required />
               </div>
-              <button
-                onClick={() => setOtaModalOpen(false)}
-                className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"
-              >
+              <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
+                <label className="block text-xs font-semibold text-slate-300">Select Release APK</label>
+                <input type="file" accept=".apk" onChange={handleApkFileSelect} className="w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-indigo-600 file:text-white" />
+                {otaSha256 && <p className="text-[10px] font-mono text-emerald-400 break-all">{otaSha256}</p>}
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setOtaModalOpen(false)} className="px-4 py-2 rounded-lg bg-slate-800 text-xs font-semibold text-slate-300">Cancel</button>
+                <button type="submit" disabled={isHashing || otaUploadProgress !== null} className="px-4 py-2 bg-indigo-600 text-xs font-semibold text-white">Broadcast Update</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL 8: NEW MYSTERY CAMPAIGN */}
+      {isMaster && newMysteryModal && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <div className="flex items-center gap-2 text-fuchsia-400 font-bold">
+                <Gift className="w-5 h-5" />
+                <h3 className="text-base text-white">Create Mystery Campaign</h3>
+              </div>
+              <button onClick={() => setNewMysteryModal(false)} className="text-slate-400 hover:text-white">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <form onSubmit={handleDeployGlobalOta} className="space-y-4">
+            <form onSubmit={handleCreateMystery} className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Campaign Identifier</label>
+                  <input
+                    type="text"
+                    value={mysteryId}
+                    onChange={(e) => setMysteryId(e.target.value)}
+                    placeholder="e.g. dominos_10"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Brand Name</label>
+                  <input
+                    type="text"
+                    value={mysteryBrand}
+                    onChange={(e) => setMysteryBrand(e.target.value)}
+                    placeholder="e.g. Domino's Pizza"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white"
+                    required
+                  />
+                </div>
+              </div>
+
               <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">
-                  Target Version Code
-                </label>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Campaign Title</label>
                 <input
-                  type="number"
-                  value={otaVersionCode}
-                  onChange={(e) => setOtaVersionCode(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono focus:outline-none focus:border-indigo-500"
-                  placeholder="e.g. 5"
+                  type="text"
+                  value={mysteryTitle}
+                  onChange={(e) => setMysteryTitle(e.target.value)}
+                  placeholder="e.g. Domino's Flat 10% Off Deal"
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white"
                   required
                 />
-                <p className="text-[11px] text-slate-500 mt-1">
-                  Tablets running build &lt; {otaVersionCode || "X"} will automatically trigger a self-update.
-                </p>
               </div>
 
-              <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
-                <label className="block text-xs font-semibold text-slate-300">
-                  Select Release APK (Auto-Generates SHA-256 Checksum)
-                </label>
-                <input
-                  type="file"
-                  accept=".apk"
-                  onChange={handleApkFileSelect}
-                  className="w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-semibold file:bg-indigo-600 file:text-white hover:file:bg-indigo-500"
-                />
-
-                {isHashing && (
-                  <p className="text-xs text-amber-400 flex items-center gap-1.5 animate-pulse">
-                    <RefreshCw className="w-3.5 h-3.5 animate-spin" /> Calculating SHA-256 checksum in memory...
-                  </p>
-                )}
-
-                {otaSha256 && (
-                  <div className="space-y-1 pt-1">
-                    <span className="text-[10px] text-emerald-400 font-semibold flex items-center gap-1">
-                      <CheckCircle className="w-3 h-3" /> Verified SHA-256:
-                    </span>
-                    <p className="text-[11px] font-mono text-slate-300 break-all bg-slate-900 p-2 rounded border border-slate-800 select-all">
-                      {otaSha256}
-                    </p>
-                  </div>
-                )}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Coupon Code</label>
+                  <input
+                    type="text"
+                    value={mysteryCoupon}
+                    onChange={(e) => setMysteryCoupon(e.target.value)}
+                    placeholder="e.g. PIZZA10"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono uppercase"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Reward Banner Text</label>
+                  <input
+                    type="text"
+                    value={mysteryDiscount}
+                    onChange={(e) => setMysteryDiscount(e.target.value)}
+                    placeholder="e.g. 10% OFF"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white"
+                    required
+                  />
+                </div>
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-slate-400 mb-1">
-                  Or Direct Hosted APK URL (Optional fallback)
-                </label>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Redeem / Target URL</label>
                 <input
                   type="url"
-                  value={otaApkUrl}
-                  onChange={(e) => setOtaApkUrl(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-xs text-white font-mono focus:outline-none focus:border-indigo-500"
-                  placeholder="https://.../app-release.apk"
+                  value={mysteryUrl}
+                  onChange={(e) => setMysteryUrl(e.target.value)}
+                  placeholder="https://..."
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white"
+                  required
                 />
               </div>
 
-              {otaUploadProgress !== null && (
-                <div className="space-y-1">
-                  <div className="flex justify-between text-xs text-slate-300">
-                    <span>Uploading APK to Cloud Storage...</span>
-                    <span>{otaUploadProgress}%</span>
-                  </div>
-                  <div className="w-full bg-slate-950 rounded-full h-2 overflow-hidden border border-slate-800">
-                    <div
-                      className="bg-indigo-600 h-full transition-all duration-200"
-                      style={{ width: `${uploadProgress}%` }}
-                    />
-                  </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Contract Fee (₹)</label>
+                  <input
+                    type="number"
+                    value={mysteryContract}
+                    onChange={(e) => setMysteryContract(Number(e.target.value))}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono"
+                    required
+                  />
                 </div>
-              )}
-
-              {otaStatus && (
-                <p className="text-xs font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 p-2.5 rounded-lg">
-                  {otaStatus}
-                </p>
-              )}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Client PIN</label>
+                  <input
+                    type="text"
+                    value={mysteryPin}
+                    onChange={(e) => setMysteryPin(e.target.value)}
+                    placeholder="1234"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono"
+                    required
+                  />
+                </div>
+              </div>
 
               <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setOtaModalOpen(false)}
-                  className="px-4 py-2 rounded-lg bg-slate-800 text-xs font-semibold text-slate-300 hover:bg-slate-700"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isHashing || otaUploadProgress !== null}
-                  className="px-4 py-2 rounded-lg bg-indigo-600 text-xs font-semibold text-white hover:bg-indigo-500 shadow-lg shadow-indigo-600/20 disabled:opacity-50"
-                >
-                  {otaUploadProgress !== null ? "Deploying Binary..." : "Broadcast Update to Fleet"}
-                </button>
+                <button type="button" onClick={() => setNewMysteryModal(false)} className="px-4 py-2 bg-slate-800 text-xs font-semibold text-slate-300 rounded-lg">Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-fuchsia-600 hover:bg-fuchsia-500 text-xs font-semibold text-white rounded-lg">Launch Campaign</button>
               </div>
             </form>
           </div>
