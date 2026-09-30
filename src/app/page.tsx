@@ -95,6 +95,7 @@ interface StoreRecord {
   payoutModel: "FIXED" | "PER_1K_PLAYS" | "HYBRID";
   baseRent: number;
   ratePer1kPlays?: number;
+  ratePerScan?: number;
   upiId?: string;
   createdAt: number;
 }
@@ -195,6 +196,7 @@ export default function OperationsPortal() {
   const [configSaved, setConfigSaved] = useState(false);
   const [copiedStoreId, setCopiedStoreId] = useState<string | null>(null);
 
+  // Onboard Store Modal State (Full Parity with Edit Store)
   const [newStoreModal, setNewStoreModal] = useState(false);
   const [formStoreId, setFormStoreId] = useState("");
   const [formStoreName, setFormStoreName] = useState("");
@@ -208,6 +210,7 @@ export default function OperationsPortal() {
   const [formRatePer1kPlays, setFormRatePer1kPlays] = useState<number>(80);
   const [formUpiId, setFormUpiId] = useState("");
 
+  // Edit Store Modal State
   const [editingStore, setEditingStore] = useState<StoreRecord | null>(null);
   const [editStoreName, setEditStoreName] = useState("");
   const [editStoreOwner, setEditStoreOwner] = useState("");
@@ -220,6 +223,7 @@ export default function OperationsPortal() {
   const [editStoreRate1k, setEditStoreRate1k] = useState<number>(80);
   const [editStoreUpi, setEditStoreUpi] = useState("");
 
+  // Ad Campaigns State
   const [ads, setAds] = useState<ActiveAd[]>([]);
   const [newAdModal, setNewAdModal] = useState(false);
   const [adNumericId, setAdNumericId] = useState<number>(1);
@@ -234,6 +238,7 @@ export default function OperationsPortal() {
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [syncingFleet, setSyncingFleet] = useState(false);
 
+  // Edit Ad State
   const [editingAd, setEditingAd] = useState<ActiveAd | null>(null);
   const [editAdTitle, setEditAdTitle] = useState("");
   const [editAdDuration, setEditAdDuration] = useState<number>(15);
@@ -242,6 +247,7 @@ export default function OperationsPortal() {
   const [editAdContractAmount, setEditAdContractAmount] = useState<number>(10000);
   const [editAdClientPin, setEditAdClientPin] = useState("");
 
+  // Mystery Campaigns State
   const [mysteryCampaigns, setMysteryCampaigns] = useState<MysteryCampaign[]>([]);
   const [newMysteryModal, setNewMysteryModal] = useState(false);
   const [mysteryId, setMysteryId] = useState("");
@@ -253,6 +259,7 @@ export default function OperationsPortal() {
   const [mysteryContract, setMysteryContract] = useState<number>(5000);
   const [mysteryPin, setMysteryPin] = useState("1234");
 
+  // Edit Mystery State
   const [editingMystery, setEditingMystery] = useState<MysteryCampaign | null>(null);
   const [editMysteryTitle, setEditMysteryTitle] = useState("");
   const [editMysteryBrand, setEditMysteryBrand] = useState("");
@@ -262,6 +269,7 @@ export default function OperationsPortal() {
   const [editMysteryContract, setEditMysteryContract] = useState<number>(5000);
   const [editMysteryPin, setEditMysteryPin] = useState("1234");
 
+  // Finances State
   const [currentMonth, setCurrentMonth] = useState("2026-09");
   const [payouts, setPayouts] = useState<Record<string, PayoutRecord>>({});
   const [payoutModalStore, setPayoutModalStore] = useState<{
@@ -429,7 +437,7 @@ export default function OperationsPortal() {
     return () => unsubscribe();
   }, [adminRole]);
 
-  // Stores directory listener with updated payout models
+  // Stores directory listener
   useEffect(() => {
     if (!adminRole) return;
     const unsubscribe = onSnapshot(collection(db, "stores"), (snapshot) => {
@@ -697,6 +705,7 @@ export default function OperationsPortal() {
     }
   };
 
+  // Onboard Store with Full Fields
   const handleCreateStore = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isMaster) return;
@@ -720,11 +729,26 @@ export default function OperationsPortal() {
       };
 
       await setDoc(doc(db, "stores", cleanId), storeData);
+      await setDoc(
+        doc(db, "devices", cleanId),
+        {
+          store_open_time: formOpenTime.trim() || "09:00",
+          store_close_time: formCloseTime.trim() || "21:30",
+        },
+        { merge: true }
+      );
+
       setNewStoreModal(false);
       setFormStoreId("");
       setFormStoreName("");
       setFormOwnerName("");
       setFormPhone("");
+      setFormCity("Ludhiana");
+      setFormOpenTime("09:00");
+      setFormCloseTime("21:30");
+      setFormPayoutModel("FIXED");
+      setFormBaseRent(2000);
+      setFormRatePer1kPlays(80);
       setFormUpiId("");
       setToastMessage(`✓ Store ${cleanId} registered successfully`);
       setTimeout(() => setToastMessage(null), 3000);
@@ -785,7 +809,6 @@ export default function OperationsPortal() {
     }
   };
 
-  // CALCULATE STORE PAYOUT BASED ON VERIFIED SCREEN IMPRESSIONS
   const calculateStorePayout = (store: StoreRecord): number => {
     const totalImpressions = analyticsMap[store.storeId]?.total_impressions || 0;
     const rate1k = store.ratePer1kPlays ?? 80;
@@ -1020,6 +1043,7 @@ export default function OperationsPortal() {
     }
   };
 
+  // Create Ad with Full Fields (Billing Structure & Duration Included)
   const handleCreateAd = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isMaster) return;
@@ -1071,6 +1095,9 @@ export default function OperationsPortal() {
       setVideoFile(null);
       setAdVideoUrl("");
       setAdTitle("");
+      setAdDuration(15);
+      setAdPricingModel("FLAT_CONTRACT");
+      setAdContractAmount(10000);
       setAdActionUrl("");
       setAdClientPin("1234");
       setUploadProgress(null);
@@ -1081,6 +1108,7 @@ export default function OperationsPortal() {
     }
   };
 
+  // Create Mystery Campaign with Full Fields
   const handleCreateMystery = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!isMaster) return;
@@ -1110,6 +1138,7 @@ export default function OperationsPortal() {
       setMysteryCoupon("");
       setMysteryDiscount("10% OFF");
       setMysteryUrl("");
+      setMysteryContract(5000);
       setMysteryPin("1234");
       setToastMessage(`✓ Mystery campaign "${cleanId}" launched`);
       setTimeout(() => setToastMessage(null), 3000);
@@ -1302,7 +1331,7 @@ export default function OperationsPortal() {
         </div>
       </header>
 
-      {/* Main Content Area */}
+      {/* Main Body */}
       <main className="p-6 max-w-7xl mx-auto space-y-6">
         {/* TAB 1: FLEET COMMANDER */}
         {activeTab === "fleet" && (
@@ -1820,7 +1849,7 @@ export default function OperationsPortal() {
               <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
                 <div>
                   <h3 className="text-sm font-bold text-white">Registered Stores &amp; Agreed Commercial Terms</h3>
-                  <p className="text-xs text-slate-400">Stores directory and verified play payout terms.</p>
+                  <p className="text-xs text-slate-400">Stores directory, links, credentials, and verified play payout terms.</p>
                 </div>
               </div>
 
@@ -1856,6 +1885,25 @@ export default function OperationsPortal() {
                           <td className="px-6 py-4">
                             <p className="font-semibold text-white">{store.storeName}</p>
                             <p className="text-slate-400 text-[11px]">{store.ownerName} • {store.city}</p>
+                            
+                            {/* RESTORED STORE PHONE, COPY LINK & OPEN PORTAL LINK */}
+                            <div className="flex items-center gap-2.5 mt-1.5">
+                              {store.phone && <span className="text-slate-500 font-mono text-[10px]">{store.phone}</span>}
+                              <button
+                                onClick={() => copyToClipboard(`${window.location.origin}/store/${store.storeId}`, `store_link_${store.storeId}`)}
+                                className="text-[10px] text-indigo-400 hover:text-indigo-300 font-semibold flex items-center gap-0.5"
+                              >
+                                {copiedStoreId === `store_link_${store.storeId}` ? "✓ Copied Link" : "Copy Link"}
+                              </button>
+                              <a
+                                href={`/store/${store.storeId}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-[10px] text-emerald-400 hover:text-emerald-300 font-semibold underline flex items-center gap-0.5"
+                              >
+                                Open Portal ↗
+                              </a>
+                            </div>
                           </td>
                           <td className="px-6 py-4 font-mono text-slate-400">{store.openTime} - {store.closeTime}</td>
                           <td className="px-6 py-4">
@@ -2011,7 +2059,9 @@ export default function OperationsPortal() {
         )}
       </main>
 
-      {/* MODAL 1: EDIT STORE PROFILE & TERMS */}
+      {/* ============================================================== */}
+      {/* MODAL 1: EDIT STORE PROFILE & TERMS                            */}
+      {/* ============================================================== */}
       {isMaster && editingStore && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
@@ -2146,168 +2196,102 @@ export default function OperationsPortal() {
         </div>
       )}
 
-      {/* MODAL 2: EDIT AD CAMPAIGN */}
-      {isMaster && editingAd && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                <Pencil className="w-5 h-5 text-indigo-400" />
-                <h3 className="text-base font-bold text-white">Edit Campaign: Ad #{editingAd.id}</h3>
-              </div>
-              <button onClick={() => setEditingAd(null)} className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
-            </div>
-
-            <form onSubmit={handleUpdateAd} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Campaign Title</label>
-                <input type="text" value={editAdTitle} onChange={(e) => setEditAdTitle(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white" required />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3 p-3 bg-slate-950 border border-slate-800 rounded-xl">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Billing Structure</label>
-                  <select value={editAdPricingModel} onChange={(e) => setEditAdPricingModel(e.target.value as any)} className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white">
-                    <option value="FLAT_CONTRACT">Flat Contract Retainer</option>
-                    <option value="PER_PLAY">Performance (Per 1k Plays)</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">{editAdPricingModel === "FLAT_CONTRACT" ? "Agreed Fee (₹)" : "Rate / 1k Plays (₹)"}</label>
-                  <input type="number" value={editAdContractAmount} onChange={(e) => setEditAdContractAmount(Number(e.target.value))} className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono" required />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Advertiser Portal PIN</label>
-                <input type="text" value={editAdClientPin} onChange={(e) => setEditAdClientPin(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono" required />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Duration (Seconds)</label>
-                  <input type="number" value={editAdDuration} onChange={(e) => setEditAdDuration(parseInt(e.target.value, 10))} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white" required />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Action / QR Target URL</label>
-                  <input type="url" value={editAdActionUrl} onChange={(e) => setEditAdActionUrl(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white" placeholder="https://..." />
-                </div>
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button type="button" onClick={() => setEditingAd(null)} className="px-4 py-2 rounded-lg bg-slate-800 text-xs font-semibold text-slate-300">Cancel</button>
-                <button type="submit" className="px-4 py-2 rounded-lg bg-indigo-600 text-xs font-semibold text-white">Save Contract</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL 3: EDIT MYSTERY CAMPAIGN */}
-      {isMaster && editingMystery && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-              <div className="flex items-center gap-2 text-fuchsia-400 font-bold">
-                <Gift className="w-5 h-5" />
-                <h3 className="text-base text-white">Edit Mystery Campaign: {editingMystery.id}</h3>
-              </div>
-              <button onClick={() => setEditingMystery(null)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
-            </div>
-
-            <form onSubmit={handleUpdateMystery} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Campaign Title</label>
-                <input type="text" value={editMysteryTitle} onChange={(e) => setEditMysteryTitle(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white" required />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Brand Name</label>
-                  <input type="text" value={editMysteryBrand} onChange={(e) => setEditMysteryBrand(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white" required />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Coupon Code</label>
-                  <input type="text" value={editMysteryCoupon} onChange={(e) => setEditMysteryCoupon(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono uppercase" required />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Contract Fee (₹)</label>
-                  <input type="number" value={editMysteryContract} onChange={(e) => setEditMysteryContract(Number(e.target.value))} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono" required />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Client PIN</label>
-                  <input type="text" value={editMysteryPin} onChange={(e) => setEditMysteryPin(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono" required />
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Target URL</label>
-                <input type="url" value={editMysteryUrl} onChange={(e) => setEditMysteryUrl(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white" placeholder="https://..." />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2">
-                <button type="button" onClick={() => setEditingMystery(null)} className="px-4 py-2 bg-slate-800 text-xs font-semibold text-slate-300 rounded-lg">Cancel</button>
-                <button type="submit" className="px-4 py-2 bg-fuchsia-600 hover:bg-fuchsia-500 text-xs font-semibold text-white rounded-lg">Save Changes</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL 4: DISBURSE SETTLEMENT */}
-      {isMaster && payoutModalStore && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                <IndianRupee className="w-5 h-5 text-emerald-400" />
-                <h3 className="text-base font-bold text-white">Record Rent Settlement</h3>
-              </div>
-              <button onClick={() => setPayoutModalStore(null)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
-            </div>
-            <form onSubmit={handleRecordPayout} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Final Settlement Amount (₹)</label>
-                <input type="number" value={overridePayoutAmount} onChange={(e) => setOverridePayoutAmount(Number(e.target.value))} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-base font-bold text-emerald-400 font-mono" required />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Transaction Ref / UTR</label>
-                <input type="text" value={payRef} onChange={(e) => setPayRef(e.target.value)} placeholder="e.g. UPI-123456" className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono" required />
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <button type="button" onClick={() => setPayoutModalStore(null)} className="px-4 py-2 rounded-lg bg-slate-800 text-xs font-semibold text-slate-300">Cancel</button>
-                <button type="submit" className="px-4 py-2 rounded-lg bg-emerald-600 text-xs font-semibold text-white">Confirm Settlement</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL 5: ONBOARD STORE */}
+      {/* ============================================================== */}
+      {/* MODAL 2: ONBOARD STORE (ALL DETAILS MATCHING EDIT STORE)       */}
+      {/* ============================================================== */}
       {isMaster && newStoreModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-              <h3 className="text-base font-bold text-white">Onboard Store &amp; Configure Terms</h3>
+              <div className="flex items-center gap-2">
+                <Store className="w-5 h-5 text-emerald-400" />
+                <h3 className="text-base font-bold text-white">Onboard Store &amp; Configure Terms</h3>
+              </div>
               <button onClick={() => setNewStoreModal(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
             </div>
+            
             <form onSubmit={handleCreateStore} className="space-y-4">
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">Store Identifier</label>
-                <input type="text" value={formStoreId} onChange={(e) => setFormStoreId(e.target.value)} placeholder="e.g. Ludhiana_Store_02" className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono" required />
+                <input
+                  type="text"
+                  value={formStoreId}
+                  onChange={(e) => setFormStoreId(e.target.value)}
+                  placeholder="e.g. Ludhiana_Store_02"
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono"
+                  required
+                />
               </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1">Store Name</label>
-                  <input type="text" value={formStoreName} onChange={(e) => setFormStoreName(e.target.value)} placeholder="Verma Grocers" className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white" required />
+                  <input
+                    type="text"
+                    value={formStoreName}
+                    onChange={(e) => setFormStoreName(e.target.value)}
+                    placeholder="Verma Grocers"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white"
+                    required
+                  />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">City</label>
-                  <input type="text" value={formCity} onChange={(e) => setFormCity(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white" />
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Owner Name</label>
+                  <input
+                    type="text"
+                    value={formOwnerName}
+                    onChange={(e) => setFormOwnerName(e.target.value)}
+                    placeholder="Rajesh Verma"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white"
+                  />
                 </div>
               </div>
 
-              {/* COMMERCIAL MODEL SELECTION */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Phone</label>
+                  <input
+                    type="tel"
+                    value={formPhone}
+                    onChange={(e) => setFormPhone(e.target.value)}
+                    placeholder="9876543210"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">City</label>
+                  <input
+                    type="text"
+                    value={formCity}
+                    onChange={(e) => setFormCity(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Open Time (HH:MM)</label>
+                  <input
+                    type="text"
+                    value={formOpenTime}
+                    onChange={(e) => setFormOpenTime(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Close Time (HH:MM)</label>
+                  <input
+                    type="text"
+                    value={formCloseTime}
+                    onChange={(e) => setFormCloseTime(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono"
+                    required
+                  />
+                </div>
+              </div>
+
               <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-3">
                 <label className="block text-xs font-bold text-indigo-400">Agreed Payout Model</label>
                 <div className="grid grid-cols-3 gap-2">
@@ -2355,6 +2339,7 @@ export default function OperationsPortal() {
                         onChange={(e) => setFormRatePer1kPlays(Number(e.target.value))}
                         className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono"
                       />
+                      <p className="text-[10px] text-slate-500 mt-1">Calculates dynamically: (Impressions ÷ 1,000) × Rate</p>
                     </div>
                   )}
                   {formPayoutModel === "HYBRID" && (
@@ -2380,6 +2365,17 @@ export default function OperationsPortal() {
                     </div>
                   )}
                 </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Shopkeeper UPI ID</label>
+                  <input
+                    type="text"
+                    value={formUpiId}
+                    onChange={(e) => setFormUpiId(e.target.value)}
+                    placeholder="shopkeeper@upi"
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono"
+                  />
+                </div>
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
@@ -2391,47 +2387,127 @@ export default function OperationsPortal() {
         </div>
       )}
 
-      {/* MODAL 6: NEW AD CAMPAIGN */}
+      {/* ============================================================== */}
+      {/* MODAL 3: CREATE AD CAMPAIGN (FULL FIELDS & DURATION INCLUDED)   */}
+      {/* ============================================================== */}
       {isMaster && newAdModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-              <h3 className="text-base font-bold text-white">Create Ad Campaign</h3>
+              <div className="flex items-center gap-2">
+                <Film className="w-5 h-5 text-indigo-400" />
+                <h3 className="text-base font-bold text-white">Create Ad Campaign</h3>
+              </div>
               <button onClick={() => setNewAdModal(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
             </div>
             <form onSubmit={handleCreateAd} className="space-y-4">
               <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1">Numeric ID</label>
-                  <input type="number" value={adNumericId} onChange={(e) => setAdNumericId(parseInt(e.target.value, 10))} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono" required />
+                  <input
+                    type="number"
+                    value={adNumericId}
+                    onChange={(e) => setAdNumericId(parseInt(e.target.value, 10))}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono"
+                    required
+                  />
                 </div>
                 <div className="col-span-2">
                   <label className="block text-xs font-semibold text-slate-300 mb-1">Campaign Title</label>
-                  <input type="text" value={adTitle} onChange={(e) => setAdTitle(e.target.value)} placeholder="e.g. Kalyan Jewellers 15s" className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white" required />
+                  <input
+                    type="text"
+                    value={adTitle}
+                    onChange={(e) => setAdTitle(e.target.value)}
+                    placeholder="e.g. Kalyan Jewellers 15s"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white"
+                    required
+                  />
                 </div>
               </div>
+
+              {/* BILLING MODEL & DURATION (MATCHING EDIT AD MODAL) */}
+              <div className="grid grid-cols-2 gap-3 p-3 bg-slate-950 border border-slate-800 rounded-xl">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Billing Structure</label>
+                  <select
+                    value={adPricingModel}
+                    onChange={(e) => setAdPricingModel(e.target.value as any)}
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white"
+                  >
+                    <option value="FLAT_CONTRACT">Flat Contract Retainer</option>
+                    <option value="PER_PLAY">Performance (Per 1k Plays)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    {adPricingModel === "FLAT_CONTRACT" ? "Agreed Fee (₹)" : "Rate / 1k Plays (₹)"}
+                  </label>
+                  <input
+                    type="number"
+                    value={adContractAmount}
+                    onChange={(e) => setAdContractAmount(Number(e.target.value))}
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono"
+                    required
+                  />
+                </div>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Contract Value (₹)</label>
-                  <input type="number" value={adContractAmount} onChange={(e) => setAdContractAmount(Number(e.target.value))} className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono" required />
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Duration (Seconds)</label>
+                  <input
+                    type="number"
+                    value={adDuration}
+                    onChange={(e) => setAdDuration(parseInt(e.target.value, 10))}
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono"
+                    required
+                  />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Client PIN</label>
-                  <input type="text" value={adClientPin} onChange={(e) => setAdClientPin(e.target.value)} placeholder="1234" className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono" required />
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Advertiser Portal PIN</label>
+                  <input
+                    type="text"
+                    value={adClientPin}
+                    onChange={(e) => setAdClientPin(e.target.value)}
+                    placeholder="1234"
+                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono"
+                    required
+                  />
                 </div>
               </div>
+
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">Upload MP4 Video File</label>
-                <input type="file" accept="video/mp4" onChange={(e) => setVideoFile(e.target.files?.[0] || null)} className="w-full text-xs text-slate-400 file:mr-3 file:py-1 file:px-2.5 file:rounded-md file:border-0 file:bg-indigo-600 file:text-white" />
+                <input
+                  type="file"
+                  accept="video/mp4"
+                  onChange={(e) => setVideoFile(e.target.files?.[0] || null)}
+                  className="w-full text-xs text-slate-400 file:mr-3 file:py-1 file:px-2.5 file:rounded-md file:border-0 file:bg-indigo-600 file:text-white"
+                />
               </div>
+
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">Or Direct Video URL (Optional fallback)</label>
-                <input type="url" value={adVideoUrl} onChange={(e) => setAdVideoUrl(e.target.value)} placeholder="https://.../video.mp4" className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white" />
+                <input
+                  type="url"
+                  value={adVideoUrl}
+                  onChange={(e) => setAdVideoUrl(e.target.value)}
+                  placeholder="https://.../video.mp4"
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white"
+                />
               </div>
+
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">Action / QR Target URL</label>
-                <input type="url" value={adActionUrl} onChange={(e) => setAdActionUrl(e.target.value)} placeholder="https://brand.com/deal" className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white" />
+                <input
+                  type="url"
+                  value={adActionUrl}
+                  onChange={(e) => setAdActionUrl(e.target.value)}
+                  placeholder="https://brand.com/deal"
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white"
+                />
               </div>
+
               <div className="flex justify-end gap-2 pt-2">
                 <button type="button" onClick={() => setNewAdModal(false)} className="px-4 py-2 rounded-lg bg-slate-800 text-xs font-semibold text-slate-300">Cancel</button>
                 <button type="submit" disabled={uploadProgress !== null} className="px-4 py-2 rounded-lg bg-indigo-600 text-xs font-semibold text-white">Publish &amp; Sync</button>
@@ -2441,52 +2517,12 @@ export default function OperationsPortal() {
         </div>
       )}
 
-      {/* MODAL 7: SCREENSHOT EXPANSION */}
-      {selectedScreenshot && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-3xl w-full p-4 space-y-3">
-            <div className="flex items-center justify-between">
-              <h4 className="text-sm font-bold text-white">Live Screenshot: {selectedScreenshot.storeId}</h4>
-              <button onClick={() => setSelectedScreenshot(null)} className="p-1 text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
-            </div>
-            <div className="rounded-lg overflow-hidden bg-black border border-slate-800 aspect-video flex items-center justify-center">
-              <img src={selectedScreenshot.image} alt="Screenshot" className="w-full h-full object-contain" />
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL 8: GLOBAL OTA */}
-      {isMaster && otaModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
-              <h3 className="text-base font-bold text-white">Deploy Fleet OTA Update</h3>
-              <button onClick={() => setOtaModalOpen(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
-            </div>
-            <form onSubmit={handleDeployGlobalOta} className="space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Target Version Code</label>
-                <input type="number" value={otaVersionCode} onChange={(e) => setOtaVersionCode(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono" required />
-              </div>
-              <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
-                <label className="block text-xs font-semibold text-slate-300">Select Release APK</label>
-                <input type="file" accept=".apk" onChange={handleApkFileSelect} className="w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-indigo-600 file:text-white" />
-                {otaSha256 && <p className="text-[10px] font-mono text-emerald-400 break-all">{otaSha256}</p>}
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <button type="button" onClick={() => setOtaModalOpen(false)} className="px-4 py-2 rounded-lg bg-slate-800 text-xs font-semibold text-slate-300">Cancel</button>
-                <button type="submit" disabled={isHashing || otaUploadProgress !== null} className="px-4 py-2 rounded-lg bg-indigo-600 text-xs font-semibold text-white">Broadcast Update</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL 9: NEW MYSTERY CAMPAIGN */}
+      {/* ============================================================== */}
+      {/* MODAL 4: CREATE MYSTERY CAMPAIGN                               */}
+      {/* ============================================================== */}
       {isMaster && newMysteryModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
               <div className="flex items-center gap-2 text-fuchsia-400 font-bold">
                 <Gift className="w-5 h-5" />
@@ -2599,6 +2635,195 @@ export default function OperationsPortal() {
               <div className="flex justify-end gap-2 pt-2">
                 <button type="button" onClick={() => setNewMysteryModal(false)} className="px-4 py-2 bg-slate-800 text-xs font-semibold text-slate-300 rounded-lg">Cancel</button>
                 <button type="submit" className="px-4 py-2 bg-fuchsia-600 hover:bg-fuchsia-500 text-xs font-semibold text-white rounded-lg">Launch Campaign</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* MODAL 5: EDIT MYSTERY CAMPAIGN                                 */}
+      {/* ============================================================== */}
+      {isMaster && editingMystery && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <div className="flex items-center gap-2 text-fuchsia-400 font-bold">
+                <Gift className="w-5 h-5" />
+                <h3 className="text-base text-white">Edit Mystery Campaign: {editingMystery.id}</h3>
+              </div>
+              <button onClick={() => setEditingMystery(null)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+            </div>
+
+            <form onSubmit={handleUpdateMystery} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Campaign Title</label>
+                <input type="text" value={editMysteryTitle} onChange={(e) => setEditMysteryTitle(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white" required />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Brand Name</label>
+                  <input type="text" value={editMysteryBrand} onChange={(e) => setEditMysteryBrand(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white" required />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Coupon Code</label>
+                  <input type="text" value={editMysteryCoupon} onChange={(e) => setEditMysteryCoupon(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono uppercase" required />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Contract Fee (₹)</label>
+                  <input type="number" value={editMysteryContract} onChange={(e) => setEditMysteryContract(Number(e.target.value))} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono" required />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Client PIN</label>
+                  <input type="text" value={editMysteryPin} onChange={(e) => setEditMysteryPin(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono" required />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Target URL</label>
+                <input type="url" value={editMysteryUrl} onChange={(e) => setEditMysteryUrl(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white" placeholder="https://..." />
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setEditingMystery(null)} className="px-4 py-2 bg-slate-800 text-xs font-semibold text-slate-300 rounded-lg">Cancel</button>
+                <button type="submit" className="px-4 py-2 bg-fuchsia-600 hover:bg-fuchsia-500 text-xs font-semibold text-white rounded-lg">Save Changes</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* MODAL 6: EDIT AD CAMPAIGN                                      */}
+      {/* ============================================================== */}
+      {isMaster && editingAd && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <Pencil className="w-5 h-5 text-indigo-400" />
+                <h3 className="text-base font-bold text-white">Edit Campaign: Ad #{editingAd.id}</h3>
+              </div>
+              <button onClick={() => setEditingAd(null)} className="p-1 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+            </div>
+
+            <form onSubmit={handleUpdateAd} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Campaign Title</label>
+                <input type="text" value={editAdTitle} onChange={(e) => setEditAdTitle(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white" required />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 p-3 bg-slate-950 border border-slate-800 rounded-xl">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Billing Structure</label>
+                  <select value={editAdPricingModel} onChange={(e) => setEditAdPricingModel(e.target.value as any)} className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white">
+                    <option value="FLAT_CONTRACT">Flat Contract Retainer</option>
+                    <option value="PER_PLAY">Performance (Per 1k Plays)</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">{editAdPricingModel === "FLAT_CONTRACT" ? "Agreed Fee (₹)" : "Rate / 1k Plays (₹)"}</label>
+                  <input type="number" value={editAdContractAmount} onChange={(e) => setEditAdContractAmount(Number(e.target.value))} className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono" required />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Advertiser Portal PIN</label>
+                <input type="text" value={editAdClientPin} onChange={(e) => setEditAdClientPin(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono" required />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Duration (Seconds)</label>
+                  <input type="number" value={editAdDuration} onChange={(e) => setEditAdDuration(parseInt(e.target.value, 10))} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white" required />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">Action / QR Target URL</label>
+                  <input type="url" value={editAdActionUrl} onChange={(e) => setEditAdActionUrl(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white" placeholder="https://..." />
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setEditingAd(null)} className="px-4 py-2 rounded-lg bg-slate-800 text-xs font-semibold text-slate-300">Cancel</button>
+                <button type="submit" className="px-4 py-2 rounded-lg bg-indigo-600 text-xs font-semibold text-white">Save Contract</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* MODAL 7: DISBURSE SETTLEMENT                                   */}
+      {/* ============================================================== */}
+      {isMaster && payoutModalStore && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <IndianRupee className="w-5 h-5 text-emerald-400" />
+                <h3 className="text-base font-bold text-white">Record Rent Settlement</h3>
+              </div>
+              <button onClick={() => setPayoutModalStore(null)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+            </div>
+            <form onSubmit={handleRecordPayout} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Final Settlement Amount (₹)</label>
+                <input type="number" value={overridePayoutAmount} onChange={(e) => setOverridePayoutAmount(Number(e.target.value))} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-base font-bold text-emerald-400 font-mono" required />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Transaction Ref / UTR</label>
+                <input type="text" value={payRef} onChange={(e) => setPayRef(e.target.value)} placeholder="e.g. UPI-123456" className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono" required />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setPayoutModalStore(null)} className="px-4 py-2 rounded-lg bg-slate-800 text-xs font-semibold text-slate-300">Cancel</button>
+                <button type="submit" className="px-4 py-2 rounded-lg bg-emerald-600 text-xs font-semibold text-white">Confirm Settlement</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* MODAL 8: SCREENSHOT PREVIEW                                    */}
+      {/* ============================================================== */}
+      {selectedScreenshot && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-3xl w-full p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-bold text-white">Live Screenshot: {selectedScreenshot.storeId}</h4>
+              <button onClick={() => setSelectedScreenshot(null)} className="p-1 text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="rounded-lg overflow-hidden bg-black border border-slate-800 aspect-video flex items-center justify-center">
+              <img src={selectedScreenshot.image} alt="Screenshot" className="w-full h-full object-contain" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============================================================== */}
+      {/* MODAL 9: GLOBAL OTA DEPLOYMENT                                 */}
+      {/* ============================================================== */}
+      {isMaster && otaModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <h3 className="text-base font-bold text-white">Deploy Fleet OTA Update</h3>
+              <button onClick={() => setOtaModalOpen(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+            </div>
+            <form onSubmit={handleDeployGlobalOta} className="space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Target Version Code</label>
+                <input type="number" value={otaVersionCode} onChange={(e) => setOtaVersionCode(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white font-mono" required />
+              </div>
+              <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
+                <label className="block text-xs font-semibold text-slate-300">Select Release APK</label>
+                <input type="file" accept=".apk" onChange={handleApkFileSelect} className="w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-indigo-600 file:text-white" />
+                {otaSha256 && <p className="text-[10px] font-mono text-emerald-400 break-all">{otaSha256}</p>}
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button type="button" onClick={() => setOtaModalOpen(false)} className="px-4 py-2 rounded-lg bg-slate-800 text-xs font-semibold text-slate-300">Cancel</button>
+                <button type="submit" disabled={isHashing || otaUploadProgress !== null} className="px-4 py-2 rounded-lg bg-indigo-600 text-xs font-semibold text-white">Broadcast Update</button>
               </div>
             </form>
           </div>
