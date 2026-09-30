@@ -44,7 +44,6 @@ import {
   Wallet,
   TrendingUp,
   Receipt,
-  CheckCircle,
   Pencil,
   Lock,
   ShieldCheck,
@@ -93,10 +92,9 @@ interface StoreRecord {
   city: string;
   openTime: string;
   closeTime: string;
-  payoutModel: "FIXED" | "PER_SCAN" | "HYBRID" | "PERFORMANCE";
+  payoutModel: "FIXED" | "PER_1K_PLAYS" | "HYBRID";
   baseRent: number;
-  ratePerScan?: number;
-  ratePerFootfall?: number;
+  ratePer1kPlays?: number;
   upiId?: string;
   createdAt: number;
 }
@@ -205,9 +203,9 @@ export default function OperationsPortal() {
   const [formCity, setFormCity] = useState("Ludhiana");
   const [formOpenTime, setFormOpenTime] = useState("09:00");
   const [formCloseTime, setFormCloseTime] = useState("21:30");
-  const [formPayoutModel, setFormPayoutModel] = useState<"FIXED" | "PER_SCAN" | "HYBRID">("FIXED");
+  const [formPayoutModel, setFormPayoutModel] = useState<"FIXED" | "PER_1K_PLAYS" | "HYBRID">("FIXED");
   const [formBaseRent, setFormBaseRent] = useState<number>(2000);
-  const [formRatePerScan, setFormRatePerScan] = useState<number>(2.00);
+  const [formRatePer1kPlays, setFormRatePer1kPlays] = useState<number>(80);
   const [formUpiId, setFormUpiId] = useState("");
 
   const [editingStore, setEditingStore] = useState<StoreRecord | null>(null);
@@ -217,9 +215,9 @@ export default function OperationsPortal() {
   const [editStoreCity, setEditStoreCity] = useState("");
   const [editStoreOpen, setEditStoreOpen] = useState("");
   const [editStoreClose, setEditStoreClose] = useState("");
-  const [editStoreModel, setEditStoreModel] = useState<"FIXED" | "PER_SCAN" | "HYBRID">("FIXED");
+  const [editStoreModel, setEditStoreModel] = useState<"FIXED" | "PER_1K_PLAYS" | "HYBRID">("FIXED");
   const [editStoreBaseRent, setEditStoreBaseRent] = useState<number>(2000);
-  const [editStoreRateScan, setEditStoreRateScan] = useState<number>(2.00);
+  const [editStoreRate1k, setEditStoreRate1k] = useState<number>(80);
   const [editStoreUpi, setEditStoreUpi] = useState("");
 
   const [ads, setAds] = useState<ActiveAd[]>([]);
@@ -345,7 +343,7 @@ export default function OperationsPortal() {
     return () => unsubscribe();
   }, [adminRole]);
 
-  // Daily impressions listener with isolated fallback to prevent double counting
+  // Daily impressions listener
   useEffect(() => {
     if (!adminRole) return;
     const unsubscribe = onSnapshot(collection(db, "daily_impressions"), (snapshot) => {
@@ -377,46 +375,25 @@ export default function OperationsPortal() {
         metrics[storeId].total_impressions += Number(data.total_impressions || 0);
         metrics[storeId].total_ble_footfall += Number(data.total_ble_footfall || 0);
 
-        // 1. Mystery Taps: Parse directly from top-level total to eliminate double counting
         let tapCount = 0;
         if (typeof data.total_mystery_taps === "number") {
           tapCount = data.total_mystery_taps;
         } else if (data.mystery_taps && typeof data.mystery_taps === "object") {
           tapCount = Object.values(data.mystery_taps).reduce((sum: number, val: any) => sum + Number(val || 0), 0);
-        } else {
-          Object.keys(data).forEach((key) => {
-            if (key.startsWith("mystery_taps.") && typeof data[key] === "number") {
-              tapCount += Number(data[key]);
-            }
-          });
         }
         metrics[storeId].total_mystery_taps += tapCount;
 
-        // Populate campaign-specific mystery taps
         if (data.mystery_taps && typeof data.mystery_taps === "object") {
           Object.entries(data.mystery_taps).forEach(([cid, val]) => {
             campaignTaps[cid] = (campaignTaps[cid] || 0) + Number(val || 0);
           });
         }
-        Object.keys(data).forEach((key) => {
-          if (key.startsWith("mystery_taps.") && typeof data[key] === "number") {
-            const cid = key.replace("mystery_taps.", "");
-            campaignTaps[cid] = (campaignTaps[cid] || 0) + Number(data[key]);
-          }
-        });
 
-        // 2. Commercial Ad QR Scans
         let adQrCount = 0;
         if (typeof data.total_qr_scans === "number") {
           adQrCount = data.total_qr_scans;
         } else if (data.qr_scans && typeof data.qr_scans === "object") {
           adQrCount = Object.values(data.qr_scans).reduce((sum: number, val: any) => sum + Number(val || 0), 0);
-        } else {
-          Object.keys(data).forEach((key) => {
-            if (key.startsWith("qr_scans.") && typeof data[key] === "number") {
-              adQrCount += Number(data[key]);
-            }
-          });
         }
         metrics[storeId].ad_qr_scans += adQrCount;
 
@@ -426,18 +403,11 @@ export default function OperationsPortal() {
           });
         }
 
-        // 3. Surprise Box / Coupon QR Scans
         let mysteryQrCount = 0;
         if (typeof data.total_mystery_scans === "number") {
           mysteryQrCount = data.total_mystery_scans;
         } else if (data.mystery_scans && typeof data.mystery_scans === "object") {
           mysteryQrCount = Object.values(data.mystery_scans).reduce((sum: number, val: any) => sum + Number(val || 0), 0);
-        } else {
-          Object.keys(data).forEach((key) => {
-            if (key.startsWith("mystery_scans.") && typeof data[key] === "number") {
-              mysteryQrCount += Number(data[key]);
-            }
-          });
         }
         metrics[storeId].mystery_qr_scans += mysteryQrCount;
 
@@ -447,12 +417,6 @@ export default function OperationsPortal() {
             campaignMysteryScans[cleanCid] = (campaignMysteryScans[cleanCid] || 0) + Number(val || 0);
           });
         }
-        Object.keys(data).forEach((key) => {
-          if (key.startsWith("mystery_scans.") && typeof data[key] === "number") {
-            const cleanCid = key.replace("mystery_scans.", "").replace(/^mystery_/, "");
-            campaignMysteryScans[cleanCid] = (campaignMysteryScans[cleanCid] || 0) + Number(data[key]);
-          }
-        });
 
         metrics[storeId].total_qr_scans += (adQrCount + mysteryQrCount);
       });
@@ -465,7 +429,7 @@ export default function OperationsPortal() {
     return () => unsubscribe();
   }, [adminRole]);
 
-  // Stores directory listener
+  // Stores directory listener with updated payout models
   useEffect(() => {
     if (!adminRole) return;
     const unsubscribe = onSnapshot(collection(db, "stores"), (snapshot) => {
@@ -473,7 +437,10 @@ export default function OperationsPortal() {
       snapshot.forEach((docSnap) => {
         const d = docSnap.data();
         const rawModel = d.payoutModel || "FIXED";
-        const normalizedModel = rawModel === "PERFORMANCE" ? "PER_SCAN" : rawModel;
+        const normalizedModel: "FIXED" | "PER_1K_PLAYS" | "HYBRID" =
+          rawModel === "PER_SCAN" || rawModel === "PERFORMANCE"
+            ? "PER_1K_PLAYS"
+            : rawModel;
 
         items.push({
           ...d,
@@ -486,7 +453,7 @@ export default function OperationsPortal() {
           closeTime: d.closeTime || "21:30",
           payoutModel: normalizedModel,
           baseRent: Number(d.baseRent ?? d.monthlyRent ?? 2000),
-          ratePerScan: Number(d.ratePerScan ?? d.ratePerFootfall ?? 2.00),
+          ratePer1kPlays: Number(d.ratePer1kPlays ?? d.ratePerScan ?? 80),
           upiId: d.upiId || "",
           createdAt: d.createdAt || Date.now(),
         } as StoreRecord);
@@ -746,9 +713,8 @@ export default function OperationsPortal() {
         openTime: formOpenTime.trim() || "09:00",
         closeTime: formCloseTime.trim() || "21:30",
         payoutModel: formPayoutModel,
-        baseRent: formPayoutModel === "PER_SCAN" ? 0 : Number(formBaseRent) || 0,
-        ratePerScan: formPayoutModel === "FIXED" ? 0 : Number(formRatePerScan) || 0,
-        ratePerFootfall: 0,
+        baseRent: formPayoutModel === "PER_1K_PLAYS" ? 0 : Number(formBaseRent) || 0,
+        ratePer1kPlays: formPayoutModel === "FIXED" ? 0 : Number(formRatePer1kPlays) || 0,
         upiId: formUpiId.trim() || "",
         createdAt: Date.now(),
       };
@@ -776,9 +742,9 @@ export default function OperationsPortal() {
     setEditStoreCity(store.city);
     setEditStoreOpen(store.openTime);
     setEditStoreClose(store.closeTime);
-    setEditStoreModel(store.payoutModel === "PERFORMANCE" ? "PER_SCAN" : store.payoutModel);
+    setEditStoreModel(store.payoutModel);
     setEditStoreBaseRent(store.baseRent);
-    setEditStoreRateScan(store.ratePerScan ?? store.ratePerFootfall ?? 2.00);
+    setEditStoreRate1k(store.ratePer1kPlays ?? 80);
     setEditStoreUpi(store.upiId ?? "");
   };
 
@@ -795,9 +761,8 @@ export default function OperationsPortal() {
         openTime: editStoreOpen.trim(),
         closeTime: editStoreClose.trim(),
         payoutModel: editStoreModel,
-        baseRent: editStoreModel === "PER_SCAN" ? 0 : Number(editStoreBaseRent),
-        ratePerScan: editStoreModel === "FIXED" ? 0 : Number(editStoreRateScan),
-        ratePerFootfall: 0,
+        baseRent: editStoreModel === "PER_1K_PLAYS" ? 0 : Number(editStoreBaseRent),
+        ratePer1kPlays: editStoreModel === "FIXED" ? 0 : Number(editStoreRate1k),
         upiId: editStoreUpi.trim(),
       };
 
@@ -820,66 +785,97 @@ export default function OperationsPortal() {
     }
   };
 
-  const handleCreateAd = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!isMaster) return;
-    if (!videoFile && !adVideoUrl.trim()) {
-      alert("Please upload a video file or provide an MP4 URL.");
-      return;
+  // CALCULATE STORE PAYOUT BASED ON VERIFIED SCREEN IMPRESSIONS
+  const calculateStorePayout = (store: StoreRecord): number => {
+    const totalImpressions = analyticsMap[store.storeId]?.total_impressions || 0;
+    const rate1k = store.ratePer1kPlays ?? 80;
+
+    if (store.payoutModel === "FIXED") {
+      return store.baseRent;
     }
+    if (store.payoutModel === "PER_1K_PLAYS") {
+      return Math.round((totalImpressions / 1000) * rate1k);
+    }
+    if (store.payoutModel === "HYBRID") {
+      return Math.round(store.baseRent + (totalImpressions / 1000) * rate1k);
+    }
+    return store.baseRent;
+  };
+
+  const openDisburseModal = (store: StoreRecord) => {
+    if (!isMaster) return;
+    const calculated = calculateStorePayout(store);
+    setPayoutModalStore({ store, calculatedAmount: calculated });
+    setOverridePayoutAmount(calculated);
+    setPayRef("");
+    setPayMethod("UPI");
+  };
+
+  const handleRecordPayout = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isMaster || !payoutModalStore) return;
 
     try {
-      let finalUrl = adVideoUrl.trim();
+      const record: PayoutRecord = {
+        storeId: payoutModalStore.store.storeId,
+        monthYear: currentMonth,
+        amount: Number(overridePayoutAmount),
+        status: "PAID",
+        paymentMethod: payMethod,
+        transactionRef: payRef.trim() || `REF-${Date.now()}`,
+        paidAt: Date.now(),
+      };
 
-      if (videoFile) {
-        const fileExt = videoFile.name.split(".").pop();
-        const storageRef = ref(storage, `ads/${Date.now()}_ad_${adNumericId}.${fileExt}`);
-        const uploadTask = uploadBytesResumable(storageRef, videoFile);
+      const docId = `${currentMonth}_${payoutModalStore.store.storeId}`;
+      await setDoc(doc(db, "payouts", docId), record);
 
-        await new Promise<void>((resolve, reject) => {
-          uploadTask.on(
-            "state_changed",
-            (snapshot) => {
-              const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-              setUploadProgress(Math.round(progress));
-            },
-            (error) => reject(error),
-            async () => {
-              finalUrl = await getDownloadURL(uploadTask.snapshot.ref);
-              resolve();
-            }
-          );
-        });
-      }
-
-      const docId = `ad_${adNumericId}`;
-      await setDoc(doc(db, "active_ads", docId), {
-        id: Number(adNumericId),
-        title: adTitle.trim() || `Ad #${adNumericId}`,
-        videoUrl: finalUrl,
-        durationSeconds: Number(adDuration) || 15,
-        actionUrl: adActionUrl.trim() || null,
-        isActive: true,
-        pricingModel: adPricingModel,
-        contractAmount: Number(adContractAmount) || 0,
-        clientPin: adClientPin.trim() || "1234",
-      });
-
-      await broadcastAdUpdateToFleet();
-
-      setNewAdModal(false);
-      setVideoFile(null);
-      setAdVideoUrl("");
-      setAdTitle("");
-      setAdActionUrl("");
-      setAdClientPin("1234");
-      setUploadProgress(null);
+      setToastMessage(`✓ Settlement of ₹${Number(overridePayoutAmount).toLocaleString()} sealed for ${payoutModalStore.store.storeName}`);
+      setPayoutModalStore(null);
+      setTimeout(() => setToastMessage(null), 3000);
     } catch (err) {
-      console.error("Failed to create ad:", err);
-      alert("Upload failed. Check Firebase Storage rules.");
-      setUploadProgress(null);
+      console.error("Failed to record payout:", err);
     }
   };
+
+  const copyToClipboard = (text: string, id: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedStoreId(id);
+    setTimeout(() => setCopiedStoreId(null), 2000);
+  };
+
+  const totalFleetFootfall = Object.values(analyticsMap).reduce((sum, m) => sum + m.total_ble_footfall, 0);
+  const totalFleetImpressions = Object.values(analyticsMap).reduce((sum, m) => sum + m.total_impressions, 0);
+  const totalFleetQrScans = Object.values(analyticsMap).reduce((sum, m) => sum + m.total_qr_scans, 0);
+  const totalFleetAdQr = Object.values(analyticsMap).reduce((sum, m) => sum + m.ad_qr_scans, 0);
+  const totalFleetMysteryQr = Object.values(analyticsMap).reduce((sum, m) => sum + m.mystery_qr_scans, 0);
+
+  const totalDynamicRentalObligations = stores.reduce((sum, s) => sum + calculateStorePayout(s), 0);
+  const totalPaidOut = Object.values(payouts).reduce((sum, p) => (p.status === "PAID" ? sum + p.amount : sum), 0);
+
+  const totalMysteryRevenue = mysteryCampaigns.filter((m) => m.isActive).reduce((sum, m) => sum + m.contractAmount, 0);
+  const totalAdRevenue = ads.filter((a) => a.isActive).reduce((sum, ad) => {
+    if (ad.pricingModel === "FLAT_CONTRACT") return sum + ad.contractAmount;
+    if (ad.pricingModel === "PER_PLAY") return sum + Math.round((totalFleetImpressions / 1000) * ad.contractAmount);
+    return sum;
+  }, 0);
+
+  const totalDynamicRevenue = totalAdRevenue + totalMysteryRevenue;
+  const netEstimatedProfit = totalDynamicRevenue - totalDynamicRentalObligations;
+
+  const mapDevices: MapDevice[] = devices.map((d) => ({
+    storeId: d.storeId,
+    status: d.status,
+    latitude: d.latitude,
+    longitude: d.longitude,
+    battery_percentage: d.battery_percentage,
+    store_open_time: d.store_open_time,
+    store_close_time: d.store_close_time,
+    footfall: analyticsMap[d.storeId]?.total_ble_footfall || 0,
+    impressions: analyticsMap[d.storeId]?.total_impressions || 0,
+    qrScans: analyticsMap[d.storeId]?.total_qr_scans || 0,
+    adQrScans: analyticsMap[d.storeId]?.ad_qr_scans || 0,
+    mysteryQrScans: analyticsMap[d.storeId]?.mystery_qr_scans || 0,
+  }));
 
   const openEditAdModal = (ad: ActiveAd) => {
     if (!isMaster) return;
@@ -943,43 +939,6 @@ export default function OperationsPortal() {
       } catch (err) {
         console.error("Failed to delete ad:", err);
       }
-    }
-  };
-
-  const handleCreateMystery = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!isMaster) return;
-    const cleanId = mysteryId.trim().toLowerCase().replace(/\s+/g, "_");
-    if (!cleanId) return;
-
-    try {
-      await setDoc(doc(db, "mystery_campaigns", cleanId), {
-        id: cleanId,
-        title: mysteryTitle.trim() || cleanId,
-        brand: mysteryBrand.trim() || "Brand Partner",
-        couponCode: mysteryCoupon.trim().toUpperCase() || "DEAL10",
-        discountText: mysteryDiscount.trim() || "Special Reward",
-        actionUrl: mysteryUrl.trim() || null,
-        isActive: true,
-        contractAmount: Number(mysteryContract) || 0,
-        clientPin: mysteryPin.trim() || "1234",
-        createdAt: Date.now(),
-      });
-
-      await broadcastAdUpdateToFleet();
-
-      setNewMysteryModal(false);
-      setMysteryId("");
-      setMysteryTitle("");
-      setMysteryBrand("");
-      setMysteryCoupon("");
-      setMysteryDiscount("10% OFF");
-      setMysteryUrl("");
-      setMysteryPin("1234");
-      setToastMessage(`✓ Mystery campaign "${cleanId}" launched`);
-      setTimeout(() => setToastMessage(null), 3000);
-    } catch (err) {
-      console.error("Failed to create mystery campaign:", err);
     }
   };
 
@@ -1061,96 +1020,103 @@ export default function OperationsPortal() {
     }
   };
 
-  const calculateStorePayout = (store: StoreRecord): number => {
-    const totalScans = analyticsMap[store.storeId]?.total_qr_scans || 0;
-    const rate = store.ratePerScan ?? store.ratePerFootfall ?? 2.00;
-
-    if (store.payoutModel === "FIXED") {
-      return store.baseRent;
-    }
-    if (store.payoutModel === "PER_SCAN" || store.payoutModel === "PERFORMANCE") {
-      return Math.round(totalScans * rate);
-    }
-    if (store.payoutModel === "HYBRID") {
-      return Math.round(store.baseRent + totalScans * rate);
-    }
-    return store.baseRent;
-  };
-
-  const openDisburseModal = (store: StoreRecord) => {
-    if (!isMaster) return;
-    const calculated = calculateStorePayout(store);
-    setPayoutModalStore({ store, calculatedAmount: calculated });
-    setOverridePayoutAmount(calculated);
-    setPayRef("");
-    setPayMethod("UPI");
-  };
-
-  const handleRecordPayout = async (e: React.FormEvent) => {
+  const handleCreateAd = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!isMaster || !payoutModalStore) return;
+    if (!isMaster) return;
+    if (!videoFile && !adVideoUrl.trim()) {
+      alert("Please upload a video file or provide an MP4 URL.");
+      return;
+    }
 
     try {
-      const record: PayoutRecord = {
-        storeId: payoutModalStore.store.storeId,
-        monthYear: currentMonth,
-        amount: Number(overridePayoutAmount),
-        status: "PAID",
-        paymentMethod: payMethod,
-        transactionRef: payRef.trim() || `REF-${Date.now()}`,
-        paidAt: Date.now(),
-      };
+      let finalUrl = adVideoUrl.trim();
 
-      const docId = `${currentMonth}_${payoutModalStore.store.storeId}`;
-      await setDoc(doc(db, "payouts", docId), record);
+      if (videoFile) {
+        const fileExt = videoFile.name.split(".").pop();
+        const storageRef = ref(storage, `ads/${Date.now()}_ad_${adNumericId}.${fileExt}`);
+        const uploadTask = uploadBytesResumable(storageRef, videoFile);
 
-      setToastMessage(`✓ Settlement of ₹${Number(overridePayoutAmount).toLocaleString()} sealed for ${payoutModalStore.store.storeName}`);
-      setPayoutModalStore(null);
-      setTimeout(() => setToastMessage(null), 3000);
+        await new Promise<void>((resolve, reject) => {
+          uploadTask.on(
+            "state_changed",
+            (snapshot) => {
+              const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+              setUploadProgress(Math.round(progress));
+            },
+            (error) => reject(error),
+            async () => {
+              finalUrl = await getDownloadURL(uploadTask.snapshot.ref);
+              resolve();
+            }
+          );
+        });
+      }
+
+      const docId = `ad_${adNumericId}`;
+      await setDoc(doc(db, "active_ads", docId), {
+        id: Number(adNumericId),
+        title: adTitle.trim() || `Ad #${adNumericId}`,
+        videoUrl: finalUrl,
+        durationSeconds: Number(adDuration) || 15,
+        actionUrl: adActionUrl.trim() || null,
+        isActive: true,
+        pricingModel: adPricingModel,
+        contractAmount: Number(adContractAmount) || 0,
+        clientPin: adClientPin.trim() || "1234",
+      });
+
+      await broadcastAdUpdateToFleet();
+
+      setNewAdModal(false);
+      setVideoFile(null);
+      setAdVideoUrl("");
+      setAdTitle("");
+      setAdActionUrl("");
+      setAdClientPin("1234");
+      setUploadProgress(null);
     } catch (err) {
-      console.error("Failed to record payout:", err);
+      console.error("Failed to create ad:", err);
+      alert("Upload failed. Check Firebase Storage rules.");
+      setUploadProgress(null);
     }
   };
 
-  const copyToClipboard = (text: string, id: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedStoreId(id);
-    setTimeout(() => setCopiedStoreId(null), 2000);
+  const handleCreateMystery = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!isMaster) return;
+    const cleanId = mysteryId.trim().toLowerCase().replace(/\s+/g, "_");
+    if (!cleanId) return;
+
+    try {
+      await setDoc(doc(db, "mystery_campaigns", cleanId), {
+        id: cleanId,
+        title: mysteryTitle.trim() || cleanId,
+        brand: mysteryBrand.trim() || "Brand Partner",
+        couponCode: mysteryCoupon.trim().toUpperCase() || "DEAL10",
+        discountText: mysteryDiscount.trim() || "Special Reward",
+        actionUrl: mysteryUrl.trim() || null,
+        isActive: true,
+        contractAmount: Number(mysteryContract) || 0,
+        clientPin: mysteryPin.trim() || "1234",
+        createdAt: Date.now(),
+      });
+
+      await broadcastAdUpdateToFleet();
+
+      setNewMysteryModal(false);
+      setMysteryId("");
+      setMysteryTitle("");
+      setMysteryBrand("");
+      setMysteryCoupon("");
+      setMysteryDiscount("10% OFF");
+      setMysteryUrl("");
+      setMysteryPin("1234");
+      setToastMessage(`✓ Mystery campaign "${cleanId}" launched`);
+      setTimeout(() => setToastMessage(null), 3000);
+    } catch (err) {
+      console.error("Failed to create mystery campaign:", err);
+    }
   };
-
-  const totalFleetFootfall = Object.values(analyticsMap).reduce((sum, m) => sum + m.total_ble_footfall, 0);
-  const totalFleetImpressions = Object.values(analyticsMap).reduce((sum, m) => sum + m.total_impressions, 0);
-  const totalFleetQrScans = Object.values(analyticsMap).reduce((sum, m) => sum + m.total_qr_scans, 0);
-  const totalFleetAdQr = Object.values(analyticsMap).reduce((sum, m) => sum + m.ad_qr_scans, 0);
-  const totalFleetMysteryQr = Object.values(analyticsMap).reduce((sum, m) => sum + m.mystery_qr_scans, 0);
-
-  const totalDynamicRentalObligations = stores.reduce((sum, s) => sum + calculateStorePayout(s), 0);
-  const totalPaidOut = Object.values(payouts).reduce((sum, p) => (p.status === "PAID" ? sum + p.amount : sum), 0);
-
-  const totalMysteryRevenue = mysteryCampaigns.filter((m) => m.isActive).reduce((sum, m) => sum + m.contractAmount, 0);
-  const totalAdRevenue = ads.filter((a) => a.isActive).reduce((sum, ad) => {
-    if (ad.pricingModel === "FLAT_CONTRACT") return sum + ad.contractAmount;
-    if (ad.pricingModel === "PER_PLAY") return sum + Math.round((totalFleetImpressions / 1000) * ad.contractAmount);
-    return sum;
-  }, 0);
-
-  const totalDynamicRevenue = totalAdRevenue + totalMysteryRevenue;
-  const netEstimatedProfit = totalDynamicRevenue - totalDynamicRentalObligations;
-
-  const mapDevices: MapDevice[] = devices.map((d) => ({
-    storeId: d.storeId,
-    status: d.status,
-    latitude: d.latitude,
-    longitude: d.longitude,
-    battery_percentage: d.battery_percentage,
-    store_open_time: d.store_open_time,
-    store_close_time: d.store_close_time,
-    footfall: analyticsMap[d.storeId]?.total_ble_footfall || 0,
-    impressions: analyticsMap[d.storeId]?.total_impressions || 0,
-    qrScans: analyticsMap[d.storeId]?.total_qr_scans || 0,
-    adQrScans: analyticsMap[d.storeId]?.ad_qr_scans || 0,
-    mysteryQrScans: analyticsMap[d.storeId]?.mystery_qr_scans || 0,
-  }));
 
   if (isAuthChecking) {
     return (
@@ -1336,7 +1302,7 @@ export default function OperationsPortal() {
         </div>
       </header>
 
-      {/* Main Body */}
+      {/* Main Content Area */}
       <main className="p-6 max-w-7xl mx-auto space-y-6">
         {/* TAB 1: FLEET COMMANDER */}
         {activeTab === "fleet" && (
@@ -1497,7 +1463,7 @@ export default function OperationsPortal() {
           </>
         )}
 
-        {/* TAB 2: CAMPAIGNS (VIDEO ADS + MYSTERY CAMPAIGNS) */}
+        {/* TAB 2: CAMPAIGNS */}
         {activeTab === "ads" && (
           <div className="space-y-8">
             {/* 1. Mystery Campaigns Section */}
@@ -1566,7 +1532,6 @@ export default function OperationsPortal() {
                           </div>
                         )}
 
-                        {/* Mystery Portal Link & Client PIN Card */}
                         <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
                           <div className="flex items-center justify-between text-xs">
                             <span className="text-slate-400">Advertiser Portal URL:</span>
@@ -1691,7 +1656,6 @@ export default function OperationsPortal() {
                           </div>
                         )}
 
-                        {/* Video Ad Advertiser Portal Link & Client PIN Card (Corrected to /campaign/ad_...) */}
                         <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
                           <div className="flex items-center justify-between text-xs">
                             <span className="text-slate-400">Advertiser Portal URL:</span>
@@ -1855,8 +1819,8 @@ export default function OperationsPortal() {
             <div className="bg-slate-900 border border-slate-800 rounded-xl overflow-hidden shadow-sm">
               <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
                 <div>
-                  <h3 className="text-sm font-bold text-white">Registered Stores &amp; Dynamic Terms</h3>
-                  <p className="text-xs text-slate-400">Store locations, hardware status, and agreed commercial terms.</p>
+                  <h3 className="text-sm font-bold text-white">Registered Stores &amp; Agreed Commercial Terms</h3>
+                  <p className="text-xs text-slate-400">Stores directory and verified play payout terms.</p>
                 </div>
               </div>
 
@@ -1866,25 +1830,20 @@ export default function OperationsPortal() {
                     <tr>
                       <th className="px-6 py-3">Store ID</th>
                       <th className="px-6 py-3">Business &amp; Owner</th>
-                      <th className="px-6 py-3">Hours</th>
-                      <th className="px-6 py-3">Agreed Terms</th>
-                      <th className="px-6 py-3">Total QR Scans</th>
-                      <th className="px-6 py-3">Est. Rent This Mo</th>
-                      <th className="px-6 py-3">Hardware Link</th>
+                      <th className="px-6 py-3">Operating Hours</th>
+                      <th className="px-6 py-3">Payout Model</th>
+                      <th className="px-6 py-3">Delivered Plays</th>
+                      <th className="px-6 py-3">Calculated Rent</th>
+                      <th className="px-6 py-3">Status</th>
                       {isMaster && <th className="px-6 py-3 text-right">Actions</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-800/60">
                     {stores.map((store) => {
                       const pairedDevice = devices.find((d) => d.storeId === store.storeId);
-                      const isPaired = !!pairedDevice;
                       const isOnline = pairedDevice?.status === "ONLINE";
                       const dynamicRent = calculateStorePayout(store);
-                      const storeMetrics = analyticsMap[store.storeId] || {
-                        total_qr_scans: 0,
-                        ad_qr_scans: 0,
-                        mystery_qr_scans: 0,
-                      };
+                      const storePlays = analyticsMap[store.storeId]?.total_impressions || 0;
 
                       return (
                         <tr key={store.storeId} className="hover:bg-slate-800/30 transition">
@@ -1897,46 +1856,36 @@ export default function OperationsPortal() {
                           <td className="px-6 py-4">
                             <p className="font-semibold text-white">{store.storeName}</p>
                             <p className="text-slate-400 text-[11px]">{store.ownerName} • {store.city}</p>
-                            <div className="flex items-center gap-2 mt-1">
-                              <span className="text-slate-500 font-mono text-[10px]">{store.phone}</span>
-                              <a
-                                href={`/store/${store.storeId}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-[10px] text-emerald-400 hover:text-emerald-300 font-semibold underline flex items-center gap-0.5"
-                              >
-                                Open Portal ↗
-                              </a>
-                            </div>
                           </td>
                           <td className="px-6 py-4 font-mono text-slate-400">{store.openTime} - {store.closeTime}</td>
                           <td className="px-6 py-4">
-                            <span className="inline-block px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-800 text-slate-300 border border-slate-700">
+                            <span className="inline-block px-2.5 py-1 rounded text-[11px] font-semibold bg-slate-800 text-slate-300 border border-slate-700">
                               {store.payoutModel === "FIXED" && `Flat ₹${store.baseRent.toLocaleString()}`}
-                              {(store.payoutModel === "PER_SCAN" || store.payoutModel === "PERFORMANCE") && `₹${store.ratePerScan || 2}/scan`}
-                              {store.payoutModel === "HYBRID" && `₹${store.baseRent} base + ₹${store.ratePerScan || 2}/scan`}
+                              {store.payoutModel === "PER_1K_PLAYS" && `₹${store.ratePer1kPlays || 80}/1k Plays`}
+                              {store.payoutModel === "HYBRID" && `₹${store.baseRent} + ₹${store.ratePer1kPlays || 80}/1k`}
                             </span>
                           </td>
-                          <td className="px-6 py-4">
-                            <span className="font-mono font-bold text-emerald-400">{storeMetrics.total_qr_scans.toLocaleString()}</span>
-                            <p className="text-[10px] text-slate-500 font-mono">{storeMetrics.ad_qr_scans} Ad • {storeMetrics.mystery_qr_scans} Surprise</p>
+                          <td className="px-6 py-4 font-mono font-bold text-amber-400">
+                            {storePlays.toLocaleString()}
                           </td>
-                          <td className="px-6 py-4 font-bold text-emerald-400 font-mono text-sm">₹{dynamicRent.toLocaleString()}</td>
+                          <td className="px-6 py-4 font-bold text-emerald-400 font-mono text-sm">
+                            ₹{dynamicRent.toLocaleString()}
+                          </td>
                           <td className="px-6 py-4">
-                            {isPaired ? (
-                              <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-semibold ${isOnline ? "bg-emerald-500/10 text-emerald-400" : "bg-amber-500/10 text-amber-400"}`}>
-                                <span className="w-1.5 h-1.5 rounded-full bg-current" />
-                                {isOnline ? "Active" : "Offline"}
-                              </span>
-                            ) : (
-                              <span className="text-slate-500 text-[11px]">Unpaired</span>
-                            )}
+                            <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-semibold ${isOnline ? "bg-emerald-500/10 text-emerald-400" : "bg-slate-800 text-slate-400"}`}>
+                              <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                              {isOnline ? "Online" : "Offline"}
+                            </span>
                           </td>
                           {isMaster && (
                             <td className="px-6 py-4 text-right">
                               <div className="flex items-center justify-end gap-1">
-                                <button onClick={() => openEditStoreModal(store)} className="p-1.5 text-indigo-400 hover:bg-indigo-500/10 rounded-lg"><Pencil className="w-4 h-4" /></button>
-                                {isPaired && <button onClick={() => handleDecommission(store.storeId)} className="p-1.5 text-rose-400 hover:bg-rose-500/10 rounded-lg"><Trash2 className="w-4 h-4" /></button>}
+                                <button onClick={() => openEditStoreModal(store)} className="p-1.5 text-indigo-400 hover:bg-indigo-500/10 rounded-lg">
+                                  <Pencil className="w-4 h-4" />
+                                </button>
+                                <button onClick={() => handleDecommission(store.storeId)} className="p-1.5 text-rose-400 hover:bg-rose-500/10 rounded-lg">
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
                               </div>
                             </td>
                           )}
@@ -1950,7 +1899,7 @@ export default function OperationsPortal() {
           </div>
         )}
 
-        {/* TAB 4: DYNAMIC FINANCIAL LEDGER */}
+        {/* TAB 4: FINANCES */}
         {activeTab === "finances" && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
@@ -1988,9 +1937,8 @@ export default function OperationsPortal() {
               <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
                 <div>
                   <h3 className="text-sm font-bold text-white">Shopkeeper Settlement Ledger</h3>
-                  <p className="text-xs text-slate-400">Telemetry-adjusted dynamic settlements for billing period {currentMonth}.</p>
+                  <p className="text-xs text-slate-400">Impression-adjusted settlements for period {currentMonth}.</p>
                 </div>
-
                 <div className="flex items-center gap-2">
                   <label className="text-xs text-slate-400 font-medium">Billing Month:</label>
                   <input
@@ -2009,7 +1957,7 @@ export default function OperationsPortal() {
                       <th className="px-6 py-3">Store Location</th>
                       <th className="px-6 py-3">Payment Info (UPI)</th>
                       <th className="px-6 py-3">Agreement Model</th>
-                      <th className="px-6 py-3">Verified QR Scans</th>
+                      <th className="px-6 py-3">Verified Screen Plays</th>
                       <th className="px-6 py-3">Calculated Rent</th>
                       <th className="px-6 py-3">Settlement</th>
                       {isMaster && <th className="px-6 py-3 text-right">Action</th>}
@@ -2020,7 +1968,7 @@ export default function OperationsPortal() {
                       const payout = payouts[store.storeId];
                       const isPaid = payout?.status === "PAID";
                       const dynamicAmount = calculateStorePayout(store);
-                      const storeMetrics = analyticsMap[store.storeId] || { total_qr_scans: 0 };
+                      const storePlays = analyticsMap[store.storeId]?.total_impressions || 0;
 
                       return (
                         <tr key={store.storeId} className="hover:bg-slate-800/30 transition">
@@ -2030,7 +1978,7 @@ export default function OperationsPortal() {
                           </td>
                           <td className="px-6 py-4 font-mono text-slate-300">{store.upiId || "None"}</td>
                           <td className="px-6 py-4">{store.payoutModel}</td>
-                          <td className="px-6 py-4 font-mono text-emerald-400 font-semibold">{storeMetrics.total_qr_scans} scans</td>
+                          <td className="px-6 py-4 font-mono text-amber-400 font-semibold">{storePlays.toLocaleString()}</td>
                           <td className="px-6 py-4 font-bold text-emerald-400 text-sm font-mono">₹{dynamicAmount.toLocaleString()}</td>
                           <td className="px-6 py-4">
                             {isPaid ? (
@@ -2112,33 +2060,72 @@ export default function OperationsPortal() {
               <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-3">
                 <label className="block text-xs font-bold text-indigo-400">Agreed Payout Model</label>
                 <div className="grid grid-cols-3 gap-2">
-                  <button type="button" onClick={() => { setEditStoreModel("FIXED"); setEditStoreRateScan(0); }} className={`py-1.5 px-2 rounded-lg text-xs font-semibold ${editStoreModel === "FIXED" ? "bg-indigo-600 text-white" : "bg-slate-900 text-slate-400"}`}>Flat Monthly</button>
-                  <button type="button" onClick={() => { setEditStoreModel("PER_SCAN"); setEditStoreBaseRent(0); }} className={`py-1.5 px-2 rounded-lg text-xs font-semibold ${editStoreModel === "PER_SCAN" ? "bg-indigo-600 text-white" : "bg-slate-900 text-slate-400"}`}>Per Scan</button>
-                  <button type="button" onClick={() => setEditStoreModel("HYBRID")} className={`py-1.5 px-2 rounded-lg text-xs font-semibold ${editStoreModel === "HYBRID" ? "bg-indigo-600 text-white" : "bg-slate-900 text-slate-400"}`}>Hybrid</button>
+                  <button
+                    type="button"
+                    onClick={() => { setEditStoreModel("FIXED"); setEditStoreRate1k(0); }}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition ${editStoreModel === "FIXED" ? "bg-indigo-600 text-white" : "bg-slate-900 text-slate-400"}`}
+                  >
+                    Flat Monthly
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setEditStoreModel("PER_1K_PLAYS"); setEditStoreBaseRent(0); }}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition ${editStoreModel === "PER_1K_PLAYS" ? "bg-indigo-600 text-white" : "bg-slate-900 text-slate-400"}`}
+                  >
+                    Per 1k Plays
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditStoreModel("HYBRID")}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition ${editStoreModel === "HYBRID" ? "bg-indigo-600 text-white" : "bg-slate-900 text-slate-400"}`}
+                  >
+                    Hybrid
+                  </button>
                 </div>
 
                 <div className="pt-1">
                   {editStoreModel === "FIXED" && (
                     <div>
                       <label className="block text-xs font-semibold text-slate-300 mb-1">Fixed Monthly Rent (₹)</label>
-                      <input type="number" value={editStoreBaseRent} onChange={(e) => setEditStoreBaseRent(Number(e.target.value))} className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono" />
+                      <input
+                        type="number"
+                        value={editStoreBaseRent}
+                        onChange={(e) => setEditStoreBaseRent(Number(e.target.value))}
+                        className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono"
+                      />
                     </div>
                   )}
-                  {editStoreModel === "PER_SCAN" && (
+                  {editStoreModel === "PER_1K_PLAYS" && (
                     <div>
-                      <label className="block text-xs font-semibold text-slate-300 mb-1">Rate / QR Scan (₹)</label>
-                      <input type="number" step="0.01" value={editStoreRateScan} onChange={(e) => setEditStoreRateScan(Number(e.target.value))} className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono" />
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">Rate per 1,000 Screen Plays (₹)</label>
+                      <input
+                        type="number"
+                        value={editStoreRate1k}
+                        onChange={(e) => setEditStoreRate1k(Number(e.target.value))}
+                        className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono"
+                      />
+                      <p className="text-[10px] text-slate-500 mt-1">Calculates dynamically: (Impressions ÷ 1,000) × Rate</p>
                     </div>
                   )}
                   {editStoreModel === "HYBRID" && (
                     <div className="grid grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-xs font-semibold text-slate-300 mb-1">Base Rent (₹)</label>
-                        <input type="number" value={editStoreBaseRent} onChange={(e) => setEditStoreBaseRent(Number(e.target.value))} className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono" />
+                        <label className="block text-xs font-semibold text-slate-300 mb-1">Base Monthly Rent (₹)</label>
+                        <input
+                          type="number"
+                          value={editStoreBaseRent}
+                          onChange={(e) => setEditStoreBaseRent(Number(e.target.value))}
+                          className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono"
+                        />
                       </div>
                       <div>
-                        <label className="block text-xs font-semibold text-slate-300 mb-1">+ Rate / Scan (₹)</label>
-                        <input type="number" step="0.01" value={editStoreRateScan} onChange={(e) => setEditStoreRateScan(Number(e.target.value))} className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono" />
+                        <label className="block text-xs font-semibold text-slate-300 mb-1">+ Rate per 1k Plays (₹)</label>
+                        <input
+                          type="number"
+                          value={editStoreRate1k}
+                          onChange={(e) => setEditStoreRate1k(Number(e.target.value))}
+                          className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono"
+                        />
                       </div>
                     </div>
                   )}
@@ -2159,7 +2146,7 @@ export default function OperationsPortal() {
         </div>
       )}
 
-      {/* MODAL 2: EDIT AD CAMPAIGN (MASTER ONLY) */}
+      {/* MODAL 2: EDIT AD CAMPAIGN */}
       {isMaster && editingAd && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
@@ -2319,6 +2306,82 @@ export default function OperationsPortal() {
                   <input type="text" value={formCity} onChange={(e) => setFormCity(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white" />
                 </div>
               </div>
+
+              {/* COMMERCIAL MODEL SELECTION */}
+              <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-3">
+                <label className="block text-xs font-bold text-indigo-400">Agreed Payout Model</label>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => { setFormPayoutModel("FIXED"); setFormRatePer1kPlays(0); }}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition ${formPayoutModel === "FIXED" ? "bg-indigo-600 text-white" : "bg-slate-900 text-slate-400"}`}
+                  >
+                    Flat Monthly
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setFormPayoutModel("PER_1K_PLAYS"); setFormBaseRent(0); }}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition ${formPayoutModel === "PER_1K_PLAYS" ? "bg-indigo-600 text-white" : "bg-slate-900 text-slate-400"}`}
+                  >
+                    Per 1k Plays
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFormPayoutModel("HYBRID")}
+                    className={`py-1.5 px-2 rounded-lg text-xs font-semibold transition ${formPayoutModel === "HYBRID" ? "bg-indigo-600 text-white" : "bg-slate-900 text-slate-400"}`}
+                  >
+                    Hybrid
+                  </button>
+                </div>
+
+                <div className="pt-1">
+                  {formPayoutModel === "FIXED" && (
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">Fixed Monthly Rent (₹)</label>
+                      <input
+                        type="number"
+                        value={formBaseRent}
+                        onChange={(e) => setFormBaseRent(Number(e.target.value))}
+                        className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono"
+                      />
+                    </div>
+                  )}
+                  {formPayoutModel === "PER_1K_PLAYS" && (
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-300 mb-1">Rate per 1,000 Screen Plays (₹)</label>
+                      <input
+                        type="number"
+                        value={formRatePer1kPlays}
+                        onChange={(e) => setFormRatePer1kPlays(Number(e.target.value))}
+                        className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono"
+                      />
+                    </div>
+                  )}
+                  {formPayoutModel === "HYBRID" && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-300 mb-1">Base Monthly Rent (₹)</label>
+                        <input
+                          type="number"
+                          value={formBaseRent}
+                          onChange={(e) => setFormBaseRent(Number(e.target.value))}
+                          className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-300 mb-1">+ Rate per 1k Plays (₹)</label>
+                        <input
+                          type="number"
+                          value={formRatePer1kPlays}
+                          onChange={(e) => setFormRatePer1kPlays(Number(e.target.value))}
+                          className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
               <div className="flex justify-end gap-2 pt-2">
                 <button type="button" onClick={() => setNewStoreModal(false)} className="px-4 py-2 rounded-lg bg-slate-800 text-xs font-semibold text-slate-300">Cancel</button>
                 <button type="submit" className="px-4 py-2 rounded-lg bg-emerald-600 text-xs font-semibold text-white">Save Store Profile</button>

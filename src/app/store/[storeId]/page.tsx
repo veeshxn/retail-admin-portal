@@ -31,6 +31,7 @@ import {
   Gift,
   Film,
   Sparkles,
+  Eye,
 } from "lucide-react";
 
 interface StoreData {
@@ -41,10 +42,10 @@ interface StoreData {
   city: string;
   openTime: string;
   closeTime: string;
-  payoutModel: "FIXED" | "PER_SCAN" | "HYBRID" | "PERFORMANCE";
+  payoutModel: "FIXED" | "PER_1K_PLAYS" | "HYBRID";
   baseRent: number;
+  ratePer1kPlays?: number;
   ratePerScan?: number;
-  ratePerFootfall?: number;
   upiId?: string;
   portalPin?: string;
 }
@@ -70,6 +71,7 @@ interface CampaignBreakdownItem {
   name: string;
   type: "COMMERCIAL_AD" | "MYSTERY_BOX";
   brand: string;
+  plays: number;
   scans: number;
   taps?: number;
   earnings: number;
@@ -92,6 +94,7 @@ export default function ShopkeeperPortal({
   const [store, setStore] = useState<StoreData | null>(null);
   const [telemetry, setTelemetry] = useState<DeviceTelemetry | null>(null);
   const [monthlyFootfall, setMonthlyFootfall] = useState(0);
+  const [monthlyPlays, setMonthlyPlays] = useState(0);
   const [monthlyQrScans, setMonthlyQrScans] = useState(0);
   const [payouts, setPayouts] = useState<PayoutRecord[]>([]);
   const [campaignBreakdown, setCampaignBreakdown] = useState<CampaignBreakdownItem[]>([]);
@@ -120,7 +123,17 @@ export default function ShopkeeperPortal({
         const snap = await getDoc(doc(db, "stores", storeId));
         if (snap.exists()) {
           const data = snap.data() as StoreData;
-          setStore(data);
+          const rawModel = (data.payoutModel as any) || "FIXED";
+          const normalizedModel: "FIXED" | "PER_1K_PLAYS" | "HYBRID" =
+            rawModel === "PER_SCAN" || rawModel === "PERFORMANCE"
+              ? "PER_1K_PLAYS"
+              : rawModel;
+
+          setStore({
+            ...data,
+            payoutModel: normalizedModel,
+            ratePer1kPlays: Number(data.ratePer1kPlays ?? data.ratePerScan ?? 80),
+          });
           if (data.upiId) {
             setNewUpiId(data.upiId);
           }
@@ -134,7 +147,7 @@ export default function ShopkeeperPortal({
     fetchStore();
   }, [storeId]);
 
-  // Live telemetry & analytics listener with unified tap reconciliation
+  // Live telemetry & analytics listener
   useEffect(() => {
     if (!isAuthenticated) return;
 
@@ -153,8 +166,10 @@ export default function ShopkeeperPortal({
 
     const unsubImpressions = onSnapshot(collection(db, "daily_impressions"), async (snap) => {
       let footfallSum = 0;
+      let playsSum = 0;
       let qrScansSum = 0;
 
+      const adPlaysMap: Record<string, number> = {};
       const adScansMap: Record<string, number> = {};
       const mysteryScansMap: Record<string, number> = {};
       const mysteryTapsMap: Record<string, number> = {};
@@ -169,8 +184,9 @@ export default function ShopkeeperPortal({
 
         if (currentStoreId === storeId) {
           footfallSum += Number(d.total_ble_footfall || 0);
+          playsSum += Number(d.total_impressions || 0);
 
-          // Aggregate total store mystery taps reliably
+          // Total mystery taps
           const docTaps = Number(d.total_mystery_taps || 0);
           if (docTaps > 0) {
             totalStoreMysteryTaps += docTaps;
@@ -178,7 +194,14 @@ export default function ShopkeeperPortal({
             totalStoreMysteryTaps += Object.values(d.mystery_taps).reduce((sum: number, val: any) => sum + Number(val || 0), 0);
           }
 
-          // 1. Robust Commercial Ad QR Scans Parsing
+          // Itemized Ad Plays
+          if (d.ad_impressions && typeof d.ad_impressions === "object") {
+            Object.entries(d.ad_impressions).forEach(([cid, val]) => {
+              adPlaysMap[cid] = (adPlaysMap[cid] || 0) + Number(val || 0);
+            });
+          }
+
+          // Commercial Ad QR Scans
           let adQrCount = 0;
           if (typeof d.total_qr_scans === "number") {
             adQrCount = d.total_qr_scans;
@@ -200,7 +223,7 @@ export default function ShopkeeperPortal({
             }
           });
 
-          // 2. Robust Surprise Box QR Scans Parsing
+          // Surprise Box QR Scans
           let mysteryQrCount = 0;
           if (typeof d.total_mystery_scans === "number") {
             mysteryQrCount = d.total_mystery_scans;
@@ -225,7 +248,7 @@ export default function ShopkeeperPortal({
 
           qrScansSum += (adQrCount + mysteryQrCount);
 
-          // 3. Robust Mystery Box Taps Parsing
+          // Mystery Box Taps
           if (d.mystery_taps && typeof d.mystery_taps === "object") {
             Object.entries(d.mystery_taps).forEach(([cid, val]) => {
               const count = Number(val || 0);
@@ -244,32 +267,35 @@ export default function ShopkeeperPortal({
       });
 
       setMonthlyFootfall(footfallSum);
+      setMonthlyPlays(playsSum);
       setMonthlyQrScans(qrScansSum);
 
-      // Build itemized list by matching metadata from active_ads and mystery_campaigns
+      // Build itemized list
       try {
         const adsSnap = await getDocs(collection(db, "active_ads"));
         const mysterySnap = await getDocs(collection(db, "mystery_campaigns"));
 
         const items: CampaignBreakdownItem[] = [];
-        const scanRate = store?.ratePerScan ?? store?.ratePerFootfall ?? 2.00;
+        const rate1k = store?.ratePer1kPlays ?? 80;
 
-        // Populate commercial ads
+        // Commercial ads
         adsSnap.forEach((d) => {
           const data = d.data();
           const adKey = `ad_${data.id}`;
+          const plays = adPlaysMap[adKey] || adPlaysMap[d.id] || 0;
           const scans = adScansMap[adKey] || adScansMap[d.id] || 0;
           items.push({
             id: adKey,
             name: data.title || `Ad #${data.id}`,
             type: "COMMERCIAL_AD",
             brand: "Commercial Sponsor",
+            plays: plays,
             scans: scans,
-            earnings: Math.round(scans * scanRate),
+            earnings: Math.round((plays / 1000) * rate1k),
           });
         });
 
-        // Count active mystery campaigns to handle fallback distribution
+        // Mystery campaigns
         let mysteryCount = 0;
         mysterySnap.forEach(() => { mysteryCount++; });
 
@@ -278,10 +304,8 @@ export default function ShopkeeperPortal({
           const mKey = data.id || d.id;
           const cleanMKey = mKey.replace(/^mystery_/, "");
           const scans = mysteryScansMap[cleanMKey] || mysteryScansMap[`mystery_${cleanMKey}`] || 0;
-          
+
           let taps = mysteryTapsMap[cleanMKey] || mysteryTapsMap[`mystery_${cleanMKey}`] || 0;
-          
-          // Fallback: If itemized campaign key isn't indexed, distribute total store taps across active campaigns
           if (taps === 0 && totalStoreMysteryTaps > 0 && mysteryCount > 0) {
             taps = Math.ceil(totalStoreMysteryTaps / mysteryCount);
           }
@@ -291,13 +315,14 @@ export default function ShopkeeperPortal({
             name: data.title || cleanMKey,
             type: "MYSTERY_BOX",
             brand: data.brand || "Surprise Box Sponsor",
+            plays: taps,
             scans: scans,
             taps: taps,
-            earnings: Math.round(scans * scanRate),
+            earnings: 0,
           });
         });
 
-        items.sort((a, b) => b.scans - a.scans);
+        items.sort((a, b) => b.plays - a.plays || b.scans - a.scans);
         setCampaignBreakdown(items);
       } catch (err) {
         console.error("Failed to build campaign breakdown:", err);
@@ -368,16 +393,17 @@ export default function ShopkeeperPortal({
     }
   };
 
+  // CALCULATE STORE PAYOUT BASED ON VERIFIED SCREEN IMPRESSIONS
   const calculateCurrentRent = (): number => {
     if (!store) return 0;
-    const rate = store.ratePerScan ?? store.ratePerFootfall ?? 2.00;
+    const rate1k = store.ratePer1kPlays ?? 80;
 
     if (store.payoutModel === "FIXED") return store.baseRent;
-    if (store.payoutModel === "PER_SCAN" || store.payoutModel === "PERFORMANCE") {
-      return Math.round(monthlyQrScans * rate);
+    if (store.payoutModel === "PER_1K_PLAYS") {
+      return Math.round((monthlyPlays / 1000) * rate1k);
     }
     if (store.payoutModel === "HYBRID") {
-      return Math.round(store.baseRent + monthlyQrScans * rate);
+      return Math.round(store.baseRent + (monthlyPlays / 1000) * rate1k);
     }
     return store.baseRent;
   };
@@ -545,7 +571,7 @@ export default function ShopkeeperPortal({
           </div>
         )}
 
-        {/* 3 Top Summary Cards */}
+        {/* Summary Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
             <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">
@@ -556,17 +582,17 @@ export default function ShopkeeperPortal({
               {currentMonth}
             </p>
             <p className="text-[11px] text-slate-500 mt-1 capitalize">
-              Terms: {store.payoutModel === "PER_SCAN" || store.payoutModel === "PERFORMANCE" ? "Per Scan" : store.payoutModel.toLowerCase()}
+              Terms: {store.payoutModel === "PER_1K_PLAYS" ? `₹${store.ratePer1kPlays || 80}/1k Plays` : store.payoutModel.toLowerCase()}
             </p>
           </div>
 
           <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
             <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">
-              Verified QR Scans
+              Delivered Ad Plays
             </p>
-            <p className="text-xl font-bold mt-1 text-emerald-400 flex items-center gap-2 font-mono">
-              <QrCode className="w-5 h-5 text-emerald-400" />
-              {monthlyQrScans.toLocaleString()}
+            <p className="text-xl font-bold mt-1 text-amber-400 flex items-center gap-2 font-mono">
+              <Eye className="w-5 h-5 text-amber-400" />
+              {monthlyPlays.toLocaleString()}
             </p>
             <p className="text-[11px] text-slate-500 mt-1">{monthlyFootfall.toLocaleString()} verified store footfall</p>
           </div>
@@ -584,14 +610,14 @@ export default function ShopkeeperPortal({
           </div>
         </div>
 
-        {/* Itemized Campaign Activity & Scan Breakdown Table */}
+        {/* Campaign Breakdown Table */}
         <div className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden shadow-sm">
           <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Receipt className="w-4 h-4 text-emerald-400" />
-              <h3 className="text-sm font-bold text-white">Campaign Activity &amp; Scan Earnings Breakdown</h3>
+              <h3 className="text-sm font-bold text-white">Campaign Activity &amp; Screen Plays Breakdown</h3>
             </div>
-            <span className="text-xs text-slate-400 font-mono">Rate: ₹{store.ratePerScan ?? 2}/scan</span>
+            <span className="text-xs text-slate-400 font-mono">Rate: ₹{store.ratePer1kPlays ?? 80}/1k plays</span>
           </div>
 
           <div className="overflow-x-auto">
@@ -600,7 +626,7 @@ export default function ShopkeeperPortal({
                 <tr>
                   <th className="px-6 py-3">Campaign / Sponsor</th>
                   <th className="px-6 py-3">Type</th>
-                  <th className="px-6 py-3">Screen Interactions</th>
+                  <th className="px-6 py-3">Screen Plays</th>
                   <th className="px-6 py-3">Verified Scans</th>
                   <th className="px-6 py-3 text-right">Rent Contribution</th>
                 </tr>
@@ -609,7 +635,7 @@ export default function ShopkeeperPortal({
                 {campaignBreakdown.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="px-6 py-8 text-center text-slate-500">
-                      No campaign scan activity recorded on your kiosk yet this month.
+                      No campaign playback activity recorded on your kiosk yet this month.
                     </td>
                   </tr>
                 ) : (
@@ -633,11 +659,11 @@ export default function ShopkeeperPortal({
                         </span>
                       </td>
 
-                      <td className="px-6 py-4 font-mono text-slate-400">
-                        {item.type === "MYSTERY_BOX" ? `${item.taps ?? 0} Box Taps` : "Continuous Loop"}
+                      <td className="px-6 py-4 font-mono text-amber-400 font-bold">
+                        {item.plays.toLocaleString()} plays
                       </td>
 
-                      <td className="px-6 py-4 font-mono font-bold text-emerald-400">
+                      <td className="px-6 py-4 font-mono text-emerald-400">
                         {item.scans} scans
                       </td>
 
