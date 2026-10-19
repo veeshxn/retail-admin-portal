@@ -1222,7 +1222,7 @@ export default function OperationsPortal() {
       )}
 
       {/* Top Navbar */}
-      <header className="border-b border-slate-800 bg-slate-900/60 backdrop-blur px-6 py-4 flex items-center justify-between sticky top-0 z-30">
+      <header className="border-b border-slate-800 bg-slate-900/60 backdrop-blur px-6 py-4 flex items-center justify-between sticky top-0 relative z-[9999] pointer-events-auto">
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-indigo-500/10 border border-indigo-500/30 rounded-lg text-indigo-400">
@@ -1241,7 +1241,7 @@ export default function OperationsPortal() {
             </div>
           </div>
 
-          <nav className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800">
+          <nav className="flex items-center gap-1 bg-slate-950 p-1 rounded-xl border border-slate-800 relative z-[9999] pointer-events-auto">
             <button
               onClick={() => setActiveTab("fleet")}
               className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition ${
@@ -2077,7 +2077,7 @@ export default function OperationsPortal() {
       {/* MODAL 1: EDIT STORE PROFILE & TERMS                            */}
       {/* ============================================================== */}
       {isMaster && editingStore && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 pointer-events-auto">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl max-h-[440px] min-h-[440px] w-full overflow-y-auto">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
               <div className="flex items-center gap-2">
@@ -2214,7 +2214,7 @@ export default function OperationsPortal() {
       {/* MODAL 2: ONBOARD STORE (ALL DETAILS MATCHING EDIT STORE)       */}
       {/* ============================================================== */}
       {isMaster && newStoreModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 pointer-events-auto">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl max-h-[440px] min-h-[440px] w-full overflow-y-auto">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
               <div className="flex items-center gap-2">
@@ -2405,7 +2405,7 @@ export default function OperationsPortal() {
       {/* MODAL 3: CREATE AD CAMPAIGN (FULL FIELDS & DURATION INCLUDED)   */}
       {/* ============================================================== */}
       {isMaster && newAdModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 pointer-events-auto">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl max-h-[440px] min-h-[440px] w-full overflow-y-auto">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
               <div className="flex items-center gap-2">
@@ -2535,7 +2535,7 @@ export default function OperationsPortal() {
       {/* MODAL 4: CREATE MYSTERY CAMPAIGN                               */}
       {/* ============================================================== */}
       {isMaster && newMysteryModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 pointer-events-auto">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl max-h-[440px] min-h-[440px] w-full overflow-y-auto">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
               <div className="flex items-center gap-2 text-fuchsia-400 font-bold">
@@ -2659,7 +2659,7 @@ export default function OperationsPortal() {
       {/* MODAL 5: EDIT MYSTERY CAMPAIGN                                 */}
       {/* ============================================================== */}
       {isMaster && editingMystery && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 pointer-events-auto">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl max-h-[440px] min-h-[440px] w-full overflow-y-auto">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
               <div className="flex items-center gap-2 text-fuchsia-400 font-bold">
@@ -2712,7 +2712,7 @@ export default function OperationsPortal() {
       {/* MODAL 6: EDIT AD CAMPAIGN                                      */}
       {/* ============================================================== */}
       {isMaster && editingAd && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 pointer-events-auto">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl max-h-[440px] min-h-[440px] w-full overflow-y-auto">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
               <div className="flex items-center gap-2">
@@ -2771,7 +2771,7 @@ export default function OperationsPortal() {
       {/* MODAL 7: DISBURSE SETTLEMENT                                   */}
       {/* ============================================================== */}
       {isMaster && payoutModalStore && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 pointer-events-auto">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
               <div className="flex items-center gap-2">
@@ -2802,7 +2802,7 @@ export default function OperationsPortal() {
       {/* MODAL 8: SCREENSHOT PREVIEW                                    */}
       {/* ============================================================== */}
       {selectedScreenshot && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 pointer-events-auto">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-3xl w-full p-4 space-y-3">
             <div className="flex items-center justify-between">
               <h4 className="text-sm font-bold text-white">Live Screenshot: {selectedScreenshot.storeId}</h4>
@@ -2819,7 +2819,7 @@ export default function OperationsPortal() {
       {/* MODAL 9: GLOBAL OTA DEPLOYMENT                                 */}
       {/* ============================================================== */}
       {isMaster && otaModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 pointer-events-auto">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
               <h3 className="text-base font-bold text-white">Deploy Fleet OTA Update</h3>
