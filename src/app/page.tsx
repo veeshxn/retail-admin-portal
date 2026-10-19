@@ -1,11 +1,4 @@
-
-const isImageUrl = (url: string) => {
-  if (!url) return false;
-  const clean = url.split("?")[0].toLowerCase();
-  return clean.endsWith(".jpg") || clean.endsWith(".jpeg") || clean.endsWith(".png") || clean.endsWith(".webp");
-};
 "use client";
-
 import React, { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { db, storage } from "@/lib/firebase";
@@ -58,6 +51,13 @@ import {
   Gift,
 } from "lucide-react";
 import type { MapDevice } from "@/components/FleetMap";
+
+const isImageUrl = (url?: string) => {
+  if (!url) return false;
+  const clean = url.split("?")[0].toLowerCase();
+  return clean.endsWith(".jpg") || clean.endsWith(".jpeg") || clean.endsWith(".png") || clean.endsWith(".webp");
+};
+
 
 const FleetMap = dynamic(() => import("@/components/FleetMap"), {
   ssr: false,
@@ -2488,8 +2488,7 @@ export default function OperationsPortal() {
 
               <div>
                 <label className="block text-xs font-semibold text-slate-300 mb-1">Upload Creative (Image or Video)</label>
-                <input
-                  type="file"
+                <input type="file" accept="image/*,video/*,.jpg,.jpeg,.png,.webp,.mp4,.mov" 
                   onChange={(e) => setVideoFile(e.target.files?.[0] || null)}
                   className="w-full text-xs text-slate-400 file:mr-3 file:py-1 file:px-2.5 file:rounded-md file:border-0 file:bg-indigo-600 file:text-white"
                 />
@@ -2827,7 +2826,7 @@ export default function OperationsPortal() {
               </div>
               <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
                 <label className="block text-xs font-semibold text-slate-300">Select Release APK</label>
-                <input type="file" onChange={handleApkFileSelect} className="w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-indigo-600 file:text-white" />
+                <input type="file" accept="image/*,video/*,.jpg,.jpeg,.png,.webp,.mp4,.mov"  onChange={handleApkFileSelect} className="w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-indigo-600 file:text-white"  />
                 {otaSha256 && <p className="text-[10px] font-mono text-emerald-400 break-all">{otaSha256}</p>}
               </div>
               <div className="flex justify-end gap-2 pt-2">
