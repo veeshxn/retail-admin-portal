@@ -54,13 +54,15 @@ import {
 import type { MapDevice } from "@/components/FleetMap";
 
 const MediaPreview = ({ src, alt }: { src?: string; alt?: string }) => {
-  if (!src) return <div className="w-full h-full bg-slate-950 flex items-center justify-center text-xs text-slate-500">No media</div>;
+  if (!src || typeof src !== "string") {
+    return <div className="w-full h-full bg-slate-950 flex items-center justify-center text-xs text-slate-500">No media</div>;
+  }
   const clean = src.split("?")[0].toLowerCase();
   const isImage = clean.endsWith(".jpg") || clean.endsWith(".jpeg") || clean.endsWith(".png") || clean.endsWith(".webp");
   if (isImage) {
-    return <img src={src} alt={alt || "Campaign Creative"} className="w-full h-full object-cover" />;
+    return <img src={src} alt={alt || "Ad creative"} className="w-full h-full object-cover" />;
   }
-  return <MediaPreview src={src} alt="Campaign Creative" />;
+  return <video src={src} controls className="w-full h-full object-cover" />;
 };
 
 const FleetMap = dynamic(() => import("@/components/FleetMap"), {
@@ -171,14 +173,6 @@ export default function OperationsPortal() {
   const [isAuthChecking, setIsAuthChecking] = useState(true);
 
   const [activeTab, setActiveTab] = useState<"fleet" | "ads" | "stores" | "finances">("fleet");
-  useEffect(() => {
-    const trigger = () => window.dispatchEvent(new Event("resize"));
-    trigger();
-    const t1 = setTimeout(trigger, 150);
-    const t2 = setTimeout(trigger, 450);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
-  }, [activeTab]);
-
   const [showMap, setShowMap] = useState(true);
 
   const [devices, setDevices] = useState<DeviceTelemetry[]>([]);
@@ -1222,7 +1216,7 @@ export default function OperationsPortal() {
       )}
 
       {/* Top Navbar */}
-      <header className="border-b border-slate-800 bg-slate-900/60 backdrop-blur px-6 py-4 flex items-center justify-between sticky top-0 relative z-[9999] pointer-events-auto">
+      <header className="border-b border-slate-800 bg-slate-900/60 backdrop-blur px-6 py-4 flex items-center justify-between sticky top-0 z-30 relative z-[9999] pointer-events-auto">
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-3">
             <div className="p-2 bg-indigo-500/10 border border-indigo-500/30 rounded-lg text-indigo-400">
@@ -1689,7 +1683,7 @@ export default function OperationsPortal() {
                         </div>
 
                         <div className="relative rounded-lg overflow-hidden bg-black aspect-video flex items-center justify-center border border-slate-800">
-                          <MediaPreview src={ad.videoUrl} alt="Campaign Creative" />
+                          <MediaPreview src={ad.videoUrl} alt={ad.title || "Ad creative"} />
                         </div>
 
                         {ad.actionUrl && (
@@ -2078,7 +2072,7 @@ export default function OperationsPortal() {
       {/* ============================================================== */}
       {isMaster && editingStore && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 pointer-events-auto">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl max-h-[440px] min-h-[440px] w-full overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
               <div className="flex items-center gap-2">
                 <Pencil className="w-5 h-5 text-indigo-400" />
@@ -2215,7 +2209,7 @@ export default function OperationsPortal() {
       {/* ============================================================== */}
       {isMaster && newStoreModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 pointer-events-auto">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl max-h-[440px] min-h-[440px] w-full overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
               <div className="flex items-center gap-2">
                 <Store className="w-5 h-5 text-emerald-400" />
@@ -2406,7 +2400,7 @@ export default function OperationsPortal() {
       {/* ============================================================== */}
       {isMaster && newAdModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 pointer-events-auto">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl max-h-[440px] min-h-[440px] w-full overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
               <div className="flex items-center gap-2">
                 <Film className="w-5 h-5 text-indigo-400" />
@@ -2536,7 +2530,7 @@ export default function OperationsPortal() {
       {/* ============================================================== */}
       {isMaster && newMysteryModal && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 pointer-events-auto">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl max-h-[440px] min-h-[440px] w-full overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
               <div className="flex items-center gap-2 text-fuchsia-400 font-bold">
                 <Gift className="w-5 h-5" />
@@ -2660,7 +2654,7 @@ export default function OperationsPortal() {
       {/* ============================================================== */}
       {isMaster && editingMystery && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 pointer-events-auto">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl max-h-[440px] min-h-[440px] w-full overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
               <div className="flex items-center gap-2 text-fuchsia-400 font-bold">
                 <Gift className="w-5 h-5" />
@@ -2713,7 +2707,7 @@ export default function OperationsPortal() {
       {/* ============================================================== */}
       {isMaster && editingAd && (
         <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 pointer-events-auto">
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl max-h-[440px] min-h-[440px] w-full overflow-y-auto">
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
               <div className="flex items-center gap-2">
                 <Pencil className="w-5 h-5 text-indigo-400" />
