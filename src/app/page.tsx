@@ -1057,6 +1057,17 @@ export default function OperationsPortal() {
 
   // Create Ad with Full Fields (Billing Structure & Duration Included)
   const handleCreateAd = async (e: React.FormEvent) => {
+    const finalUrl = (adActionUrl && adActionUrl.trim()) ? adActionUrl.trim() : "https://brand.com/deal";
+    if (!adTitle || !adTitle.trim()) {
+      alert("Please enter a Campaign Title");
+      return;
+    }
+    if (!videoFile && !adVideoUrl) {
+      alert("Please select a media file (Image or Video) or enter a Direct URL");
+      return;
+    }
+    alert("Publishing campaign & uploading creative to Firebase... Please click OK to proceed.");
+  
     e.preventDefault();
     if (!isMaster) return;
     if (!videoFile && !adVideoUrl.trim()) {
@@ -1094,7 +1105,7 @@ export default function OperationsPortal() {
         title: adTitle.trim() || `Ad #${adNumericId}`,
         videoUrl: finalUrl,
         durationSeconds: Number(adDuration) || 15,
-        actionUrl: adActionUrl.trim() || null,
+        actionUrl: (adActionUrl && adActionUrl.trim()) ? adActionUrl.trim() : "https://brand.com/deal".trim() || null,
         isActive: true,
         pricingModel: adPricingModel,
         contractAmount: Number(adContractAmount) || 0,
@@ -1110,7 +1121,7 @@ export default function OperationsPortal() {
       setAdDuration(15);
       setAdPricingModel("FLAT_CONTRACT");
       setAdContractAmount(10000);
-      setAdActionUrl("");
+      setAdActionUrl("https://brand.com/deal");
       setAdClientPin("1234");
       setUploadProgress(null);
     } catch (err) {
