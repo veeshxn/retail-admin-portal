@@ -1,3 +1,9 @@
+
+const isImageUrl = (url: string) => {
+  if (!url) return false;
+  const clean = url.split("?")[0].toLowerCase();
+  return clean.endsWith(".jpg") || clean.endsWith(".jpeg") || clean.endsWith(".png") || clean.endsWith(".webp");
+};
 "use client";
 
 import React, { useEffect, useState } from "react";
@@ -1671,11 +1677,15 @@ export default function OperationsPortal() {
                         </div>
 
                         <div className="relative rounded-lg overflow-hidden bg-black aspect-video flex items-center justify-center border border-slate-800">
-                          <video
+                          {isImageUrl(ad.videoUrl) ? (
+    <img src={ad.videoUrl} alt="Creative Preview" className="w-full h-full object-cover" />
+  ) : (
+    <video
                             src={ad.videoUrl}
                             controls
                             className="w-full h-full object-cover"
                           />
+  )}
                         </div>
 
                         {ad.actionUrl && (
@@ -2480,7 +2490,7 @@ export default function OperationsPortal() {
                 <label className="block text-xs font-semibold text-slate-300 mb-1">Upload MP4 Video File</label>
                 <input
                   type="file"
-                  accept="video/mp4"
+                  accept="video/mp4,video/*,image/jpeg,image/png,image/webp,image/*,.mp4,.mov,.jpg,.jpeg,.png,.webp"
                   onChange={(e) => setVideoFile(e.target.files?.[0] || null)}
                   className="w-full text-xs text-slate-400 file:mr-3 file:py-1 file:px-2.5 file:rounded-md file:border-0 file:bg-indigo-600 file:text-white"
                 />
@@ -2818,7 +2828,7 @@ export default function OperationsPortal() {
               </div>
               <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
                 <label className="block text-xs font-semibold text-slate-300">Select Release APK</label>
-                <input type="file" accept=".apk" onChange={handleApkFileSelect} className="w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-indigo-600 file:text-white" />
+                <input type="file" accept="video/mp4,video/*,image/jpeg,image/png,image/webp,image/*,.mp4,.mov,.jpg,.jpeg,.png,.webp" onChange={handleApkFileSelect} className="w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-indigo-600 file:text-white" />
                 {otaSha256 && <p className="text-[10px] font-mono text-emerald-400 break-all">{otaSha256}</p>}
               </div>
               <div className="flex justify-end gap-2 pt-2">
