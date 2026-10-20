@@ -181,6 +181,9 @@ export default function ShopkeeperPortal({
         if (!currentStoreId && docSnap.id.includes("_")) {
           currentStoreId = docSnap.id.substring(docSnap.id.indexOf("_") + 1);
         }
+        if (!currentStoreId && docSnap.id.includes("_")) {
+          currentStoreId = docSnap.id.substring(docSnap.id.indexOf("_") + 1);
+        }
 
         if (currentStoreId === storeId) {
           footfallSum += Number(d.total_ble_footfall || 0);
