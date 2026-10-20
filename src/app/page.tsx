@@ -53,14 +53,15 @@ import {
 } from "lucide-react";
 import type { MapDevice } from "@/components/FleetMap";
 
-const normalizeMediaUrl = (url: string) => {
-  if (!url) return "";
+const normalizeMediaUrl = (url?: string) => {
+  if (!url || typeof url !== "string") return "";
   let clean = url.trim();
-  if (clean.includes("dropbox.com") && clean.includes("dl=0")) {
-    return clean.replace("dl=0", "raw=1");
-  }
-  if (clean.includes("dropbox.com") && !clean.includes("raw=1") && !clean.includes("dl=1")) {
-    return clean.includes("?") ? clean + "&raw=1" : clean + "?raw=1";
+  if (clean.includes("dropbox.com")) {
+    clean = clean.replace(/https?:\/\/(www\.)?dropbox\.com/, "https://dl.dropboxusercontent.com");
+    clean = clean.replace(/([?&])dl=0/, "");
+    if (!clean.includes("raw=1") && !clean.includes("dl=1")) {
+      clean = clean.includes("?") ? clean + "&raw=1" : clean + "?raw=1";
+    }
   }
   return clean;
 };
@@ -69,12 +70,22 @@ const MediaPreview = ({ src, alt }: { src?: string; alt?: string }) => {
   if (!src || typeof src !== "string") {
     return <div className="w-full h-full bg-slate-950 flex items-center justify-center text-xs text-slate-500">No media</div>;
   }
-  const clean = src.split("?")[0].toLowerCase();
+  const streamUrl = normalizeMediaUrl(src);
+  const clean = streamUrl.split("?")[0].toLowerCase();
   const isImage = clean.endsWith(".jpg") || clean.endsWith(".jpeg") || clean.endsWith(".png") || clean.endsWith(".webp");
   if (isImage) {
-    return <img src={src} alt={alt || "Ad creative"} className="w-full h-full object-cover" />;
+    return <img src={streamUrl} alt={alt || "Ad creative"} className="w-full h-full object-cover" />;
   }
-  return <video src={src} controls className="w-full h-full object-cover" />;
+  return (
+    <video
+      key={streamUrl}
+      src={streamUrl}
+      controls
+      playsInline
+      preload="auto"
+      className="w-full h-full object-cover bg-black"
+    />
+  );
 };
 
 const FleetMap = dynamic(() => import("@/components/FleetMap"), {

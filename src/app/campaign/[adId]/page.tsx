@@ -356,7 +356,7 @@ export default function AdvertiserPortal({
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center p-4 font-sans">
         <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-sm w-full p-8 shadow-2xl text-center space-y-6">
-          <div className="w-12 h-12 bg-indigo-500/10 border border-indigo-500/30 rounded-xl flex items-center justify-center mx-auto text-indigo-400">
+          <div className="w-12 h-12 bg-indigo-500/10 border border-indigo-500/30 rounded-xl flex items-center justify-center mx-auto text-indigo-400 min-h-[6px]">
             <Film className="w-6 h-6" />
           </div>
 
@@ -393,7 +393,7 @@ export default function AdvertiserPortal({
 
             <button
               type="submit"
-              className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold transition shadow-lg shadow-indigo-600/20"
+              className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-semibold transition shadow-lg shadow-indigo-600/20 min-h-[6px]"
             >
               Access Performance Metrics
             </button>
@@ -420,7 +420,7 @@ export default function AdvertiserPortal({
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans pb-16">
       <header className="border-b border-slate-800 bg-slate-900/60 backdrop-blur px-6 py-4 flex items-center justify-between sticky top-0 z-30">
         <div className="flex items-center gap-3">
-          <div className="p-2 bg-indigo-500/10 border border-indigo-500/30 rounded-lg text-indigo-400">
+          <div className="p-2 bg-indigo-500/10 border border-indigo-500/30 rounded-lg text-indigo-400 min-h-[6px]">
             <Film className="w-5 h-5" />
           </div>
           <div>
@@ -618,7 +618,7 @@ export default function AdvertiserPortal({
                     src={streamUrl}
                     controls
                     playsInline
-                    preload="metadata"
+                    preload="auto"
                     className="w-full h-full object-cover rounded-xl bg-black"
                   />
                 );
@@ -639,7 +639,7 @@ export default function AdvertiserPortal({
                 <h3 className="text-xs font-bold text-slate-300 uppercase tracking-wider flex items-center gap-2">
                   <ShieldCheck className="w-4 h-4 text-emerald-400" /> Network SLA Certification
                 </h3>
-                <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full">
+                <span className="text-[10px] font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full min-h-[6px]">
                   100% SLA Verified
                 </span>
               </div>
@@ -724,7 +724,7 @@ export default function AdvertiserPortal({
                         <td className="px-6 py-4 font-mono font-bold text-amber-400">{sp.plays.toLocaleString()}</td>
                         <td className="px-6 py-4 font-mono text-indigo-400">{sp.footfall.toLocaleString()} passersby</td>
                         <td className="px-6 py-4">
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-mono font-bold">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-mono font-bold min-h-[6px]">
                             <QrCode className="w-3.5 h-3.5" /> {sp.qrScans} scans
                           </span>
                         </td>
@@ -745,7 +745,7 @@ export default function AdvertiserPortal({
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-xl w-full p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between pb-3 border-b border-slate-800">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 bg-indigo-500/10 border border-indigo-500/30 rounded-lg text-indigo-400">
+                <div className="p-2 bg-indigo-500/10 border border-indigo-500/30 rounded-lg text-indigo-400 min-h-[6px]">
                   <Building2 className="w-5 h-5" />
                 </div>
                 <div>
