@@ -175,7 +175,7 @@ export default function MysteryAdvertiserPortal({
       setTotalBoxTaps(tapsSum);
       setTotalQrScans(scansSum);
 
-      const perfList: StorePerformance[] = Object.entries(storeStats).map(([sId, stats]) => ({
+      const perfList: StorePerformance[] = Object.entries(storeStats).filter(([sId]) => !sId.toLowerCase().includes("unassigned")).map(([sId, stats]) => ({
         storeId: sId,
         storeName: storesMap[sId]?.storeName || sId,
         city: storesMap[sId]?.city || "Ludhiana",
@@ -372,7 +372,7 @@ export default function MysteryAdvertiserPortal({
             </p>
             <p className="text-2xl font-bold mt-1 text-white flex items-center gap-2 font-mono">
               <Building2 className="w-5 h-5 text-slate-400" />
-              {totalDisplaysCount} Screens
+              {totalDisplaysCount === 1 ? "1 Screen" : totalDisplaysCount + " Screens"}
             </p>
             <p className="text-[11px] text-slate-500 mt-1">Active retail network</p>
           </div>

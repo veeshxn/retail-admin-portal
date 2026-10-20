@@ -549,7 +549,7 @@ export default function AdvertiserPortal({
                           className="w-full max-w-[48px] bg-gradient-to-t from-cyan-600/30 to-cyan-400 rounded-t-md transition-all group-hover:brightness-125 border-t border-cyan-300"
                         />
                         <span className="text-[10px] font-mono text-slate-400 truncate w-full text-center">
-                          {d.date.slice(5)}
+                          {formatTimelineDate(d.date)}
                         </span>
                       </div>
                     );
@@ -834,4 +834,12 @@ export default function AdvertiserPortal({
       )}
     </div>
   );
+}
+
+function formatTimelineDate(dateStr: string): string {
+  if (!dateStr || dateStr.length !== 10 || !dateStr.includes("-")) return dateStr;
+  const parts = dateStr.split("-");
+  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const m = months[parseInt(parts[1], 10) - 1] || parts[1];
+  return parts[2] + " " + m;
 }
