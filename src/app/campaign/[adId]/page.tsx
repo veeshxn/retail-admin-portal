@@ -29,6 +29,20 @@ import {
   TrendingUp,
 } from "lucide-react";
 
+const normalizeMediaUrl = (url?: string) => {
+  if (!url || typeof url !== "string") return "";
+  let clean = url.trim();
+  if (clean.includes("dropbox.com")) {
+    clean = clean.replace(/https?:\/\/(www\.)?dropbox\.com/, "https://dl.dropboxusercontent.com");
+    clean = clean.replace(/([?&])dl=0/, "");
+    if (!clean.includes("raw=1") && !clean.includes("dl=1")) {
+      clean = clean.includes("?") ? clean + "&raw=1" : clean + "?raw=1";
+    }
+  }
+  return clean;
+};
+
+
 interface AdCampaign {
   docId: string;
   id: number;
@@ -152,6 +166,16 @@ export default function AdvertiserPortal({
       const storeStats: Record<string, { plays: number; footfall: number; qrScans: number; daily: Record<string, { plays: number; scans: number; footfall: number }> }> = {};
       const dateMap: Record<string, { plays: number; scans: number; footfall: number }> = {};
 
+      // Determine ad creation start date (e.g., "2026-10-19")
+      let campaignStartDate = "2026-10-19";
+      if ((ad as any).createdAt) {
+        const raw = (ad as any).createdAt;
+        const d = typeof raw === "number" ? new Date(raw) : (raw.toDate ? raw.toDate() : new Date(raw));
+        if (!isNaN(d.getTime())) {
+          campaignStartDate = d.toISOString().split("T")[0];
+        }
+      }
+
       snap.forEach((docSnap) => {
         const d = docSnap.data();
 
@@ -164,7 +188,31 @@ export default function AdvertiserPortal({
           currentStoreId = parts.slice(1).join("_");
         }
         if (!currentStoreId) return;
-        if (!docDate) docDate = "2026-09-30";
+
+        // Ignore summary docs without a valid YYYY-MM-DD date
+        if (!docDate || !/^\d{4}-\d{2}-\d{2}$/.test(docDate)) return;
+
+        // CLAMP: Exclude all historical telemetry before the ad was created
+        if (docDate < campaignStartDate) return;
+
+        let docAdPlays = 0;
+        if (d.ad_impressions && typeof d.ad_impressions === "object") {
+          docAdPlays = Number(d.ad_impressions[adKey] || d.ad_impressions[String(ad.id)] || d.ad_impressions[ad.docId] || d.ad_impressions[adId] || 0);
+        } else if (d[`ad_impressions.${adKey}`]) {
+          docAdPlays = Number(d[`ad_impressions.${adKey}`]);
+        }
+        // STRICT RULE: If this ad has no verified impressions in the document, plays = 0 (Never fallback to total_impressions)
+
+        // Only count store footfall on days when this ad actually had active broadcasts or scans
+        const docFootfall = (docAdPlays > 0 || (d.qr_scans && d.qr_scans[adKey])) ? Number(d.total_ble_footfall || 0) : 0;
+
+        let adScansForDoc = 0;
+        if (d.qr_scans && typeof d.qr_scans === "object") {
+          adScansForDoc += Number(d.qr_scans[adKey] || d.qr_scans[ad.docId] || d.qr_scans[adId] || 0);
+        }
+        if (d[`qr_scans.${adKey}`]) {
+          adScansForDoc += Number(d[`qr_scans.${adKey}`]);
+        }
 
         if (!storeStats[currentStoreId]) {
           storeStats[currentStoreId] = { plays: 0, footfall: 0, qrScans: 0, daily: {} };
@@ -174,25 +222,6 @@ export default function AdvertiserPortal({
         }
         if (!dateMap[docDate]) {
           dateMap[docDate] = { plays: 0, scans: 0, footfall: 0 };
-        }
-
-        let docAdPlays = 0;
-        if (d.ad_impressions && typeof d.ad_impressions === "object" && d.ad_impressions[adKey]) {
-          docAdPlays = Number(d.ad_impressions[adKey]);
-        } else if (d[`ad_impressions.${adKey}`]) {
-          docAdPlays = Number(d[`ad_impressions.${adKey}`]);
-        } else {
-          docAdPlays = Number(d.total_impressions || 0);
-        }
-
-        const docFootfall = Number(d.total_ble_footfall || 0);
-
-        let adScansForDoc = 0;
-        if (d.qr_scans && typeof d.qr_scans === "object") {
-          adScansForDoc += Number(d.qr_scans[adKey] || d.qr_scans[ad.docId] || d.qr_scans[adId] || 0);
-        }
-        if (d[`qr_scans.${adKey}`]) {
-          adScansForDoc += Number(d[`qr_scans.${adKey}`]);
         }
 
         plays += docAdPlays;
@@ -216,13 +245,13 @@ export default function AdvertiserPortal({
       setTotalAudienceFootfall(footfall);
       setTotalQrScans(qrCount);
 
-      // Format Date-wise timeline
+      // Date-wise timeline (only dates on/after campaign creation)
       const sortedDates = Object.entries(dateMap)
         .map(([date, data]) => ({ date, ...data }))
         .sort((a, b) => a.date.localeCompare(b.date));
       setDailyTimelineData(sortedDates);
 
-      // Build Hour-wise Distribution (9 AM to 10 PM Operating Window)
+      // Hourly Distribution based strictly on verified campaign plays
       const hourlyDistribution = [
         { hour: "09:00", weight: 0.03 },
         { hour: "10:00", weight: 0.04 },
@@ -577,7 +606,23 @@ export default function AdvertiserPortal({
             </div>
 
             <div className="relative rounded-xl overflow-hidden bg-black aspect-video flex items-center justify-center border border-slate-800">
-              <video src={ad.videoUrl} controls className="w-full h-full object-cover" />
+              {(() => {
+                const streamUrl = normalizeMediaUrl(ad.videoUrl);
+                const isImage = streamUrl.split("?")[0].toLowerCase().match(/\.(jpg|jpeg|png|webp)$/);
+                if (isImage) {
+                  return <img src={streamUrl} alt={ad.title || "Ad creative"} className="w-full h-full object-cover rounded-xl" />;
+                }
+                return (
+                  <video
+                    key={streamUrl}
+                    src={streamUrl}
+                    controls
+                    playsInline
+                    preload="metadata"
+                    className="w-full h-full object-cover rounded-xl bg-black"
+                  />
+                );
+              })()}
             </div>
 
             {ad.actionUrl && (
