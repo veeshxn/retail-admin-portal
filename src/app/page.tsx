@@ -250,6 +250,7 @@ export default function OperationsPortal() {
   // Ad Campaigns State
   const [ads, setAds] = useState<ActiveAd[]>([]);
   const [newAdModal, setNewAdModal] = useState(false);
+  const [isSubmittingAd, setIsSubmittingAd] = useState(false);
   const [adNumericId, setAdNumericId] = useState<number>(1);
   const [adTitle, setAdTitle] = useState("");
   const [adDuration, setAdDuration] = useState<number>(15);
@@ -1068,37 +1069,47 @@ export default function OperationsPortal() {
   };
 
   // Create Ad with Full Fields (Billing Structure & Duration Included)
-  const handleCreateAd = async (e: React.FormEvent) => {
-    const finalUrl = (adActionUrl && adActionUrl.trim()) ? adActionUrl.trim() : "https://brand.com/deal";
-    
-    if (adVideoUrl && (adVideoUrl.includes("dropbox.com/home") || adVideoUrl.endsWith("dropbox.com/"))) {
-      alert("Invalid Dropbox URL: You pasted your Dropbox home page. Please use Share -> Copy Link on the actual file.");
-      return;
-    }
-    if (!adTitle || !adTitle.trim()) {
+  const handleCreateAd = async (e?: any) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (isSubmittingAd) return;
+
+    const trimmedTitle = (adTitle || "").trim();
+    if (!trimmedTitle) {
       alert("Please enter a Campaign Title");
       return;
     }
-    if (!videoFile && !adVideoUrl) {
-      alert("Please select a media file (Image or Video) or enter a Direct URL");
+
+    const trimmedVideoUrl = (adVideoUrl || "").trim();
+    if (!videoFile && !trimmedVideoUrl) {
+      alert("Please choose a file (Image or Video) or paste a Direct URL");
       return;
     }
-    alert("Publishing campaign & uploading creative to Firebase... Please click OK to proceed.");
-  
-    e.preventDefault();
-    if (!isMaster) return;
-    if (!videoFile && !adVideoUrl.trim()) {
-      alert("Please upload a video file or provide an MP4 URL.");
+
+    if (trimmedVideoUrl && (trimmedVideoUrl.includes("dropbox.com/home") || trimmedVideoUrl.endsWith("dropbox.com/"))) {
+      alert("Invalid Dropbox URL: You pasted your Dropbox home page. Please use Share -> Copy Link on the actual file.");
       return;
     }
+
+    setIsSubmittingAd(true);
 
     try {
-      let finalUrl = adVideoUrl.trim();
+      let finalMediaUrl = trimmedVideoUrl;
 
       if (videoFile) {
-        const fileExt = videoFile.name.split(".").pop();
-        const storageRef = ref(storage, `ads/${Date.now()}_ad_${adNumericId}.${fileExt}`);
-        const uploadTask = uploadBytesResumable(storageRef, videoFile);
+        const fileExt = (videoFile.name.split(".").pop() || "mp4").toLowerCase();
+        let mimeType = videoFile.type;
+        if (!mimeType) {
+          if (fileExt === "mp4") mimeType = "video/mp4";
+          else if (fileExt === "webm") mimeType = "video/webm";
+          else if (fileExt === "png") mimeType = "image/png";
+          else if (fileExt === "webp") mimeType = "image/webp";
+          else if (fileExt === "mov") mimeType = "video/quicktime";
+          else mimeType = "image/jpeg";
+        }
+
+        const safeId = Number(adNumericId) || Date.now();
+        const storageRef = ref(storage, `ads/${Date.now()}_ad_${safeId}.${fileExt}`);
+        const uploadTask = uploadBytesResumable(storageRef, videoFile, { contentType: mimeType });
 
         await new Promise<void>((resolve, reject) => {
           uploadTask.on(
@@ -1109,28 +1120,31 @@ export default function OperationsPortal() {
             },
             (error) => reject(error),
             async () => {
-              finalUrl = await getDownloadURL(uploadTask.snapshot.ref);
+              finalMediaUrl = await getDownloadURL(uploadTask.snapshot.ref);
               resolve();
             }
           );
         });
       }
 
-      const docId = `ad_${adNumericId}`;
+      const numId = Number(adNumericId) || Date.now();
+      const docId = `ad_${numId}`;
+      const finalActionUrl = (adActionUrl && adActionUrl.trim()) ? adActionUrl.trim() : "https://brand.com/deal";
+
       await setDoc(doc(db, "active_ads", docId), {
-        id: Number(adNumericId),
-        title: adTitle.trim() || `Ad #${adNumericId}`,
-        videoUrl: normalizeMediaUrl(finalUrl),
+        id: numId,
+        title: trimmedTitle,
+        videoUrl: normalizeMediaUrl(finalMediaUrl),
         durationSeconds: Number(adDuration) || 15,
-        actionUrl: (adActionUrl && adActionUrl.trim()) ? adActionUrl.trim() : "https://brand.com/deal".trim() || null,
+        actionUrl: finalActionUrl,
         isActive: true,
         pricingModel: adPricingModel,
         contractAmount: Number(adContractAmount) || 0,
-        clientPin: adClientPin.trim() || "1234",
+        clientPin: (adClientPin && adClientPin.trim()) || "1234",
+        createdAt: Date.now(),
       });
 
-      await broadcastAdUpdateToFleet();
-
+      // Close modal and reset form immediately
       setNewAdModal(false);
       setVideoFile(null);
       setAdVideoUrl("");
@@ -1141,10 +1155,15 @@ export default function OperationsPortal() {
       setAdActionUrl("https://brand.com/deal");
       setAdClientPin("1234");
       setUploadProgress(null);
-    } catch (err) {
+      setIsSubmittingAd(false);
+
+      // Fleet sync in background without blocking modal close
+      broadcastAdUpdateToFleet().catch((err) => console.warn("Fleet broadcast notice:", err));
+    } catch (err: any) {
       console.error("Failed to create ad:", err);
-      alert("Upload failed. Check Firebase Storage rules.");
+      alert("Upload failed: " + (err?.message || "Please check Firebase Storage rules"));
       setUploadProgress(null);
+      setIsSubmittingAd(false);
     }
   };
 
@@ -2436,7 +2455,7 @@ export default function OperationsPortal() {
               </div>
               <button onClick={() => setNewAdModal(false)} className="text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
             </div>
-            <form onSubmit={handleCreateAd} className="space-y-4">
+            <form onSubmit={handleCreateAd} noValidate className="space-y-4">
               <div className="grid grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1">Numeric ID</label>
@@ -2546,7 +2565,7 @@ export default function OperationsPortal() {
 
               <div className="flex justify-end gap-2 pt-2">
                 <button type="button" onClick={() => setNewAdModal(false)} className="px-4 py-2 rounded-lg bg-slate-800 text-xs font-semibold text-slate-300">Cancel</button>
-                <button type="submit" disabled={uploadProgress !== null} className="px-4 py-2 rounded-lg bg-indigo-600 text-xs font-semibold text-white">Publish &amp; Sync</button>
+                <button type="button" onClick={handleCreateAd} disabled={isSubmittingAd} className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-xs font-semibold text-white shadow-lg transition-all">{isSubmittingAd ? (uploadProgress !== null ? `Uploading (${uploadProgress}%)...` : "Publishing...") : "Publish & Sync"}</button>
               </div>
             </form>
           </div>
@@ -2855,6 +2874,7 @@ export default function OperationsPortal() {
               <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl space-y-2">
                 <label className="block text-xs font-semibold text-slate-300">Select Release APK</label>
                 <input type="file" accept=".apk" onChange={handleApkFileSelect} className="w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:bg-indigo-600 file:text-white" />
+                {videoFile && <p className="text-xs text-emerald-400 font-medium mt-1">✓ Ready: {videoFile.name} ({(videoFile.size / (1024 * 1024)).toFixed(2)} MB)</p>}
                 {otaSha256 && <p className="text-[10px] font-mono text-emerald-400 break-all">{otaSha256}</p>}
               </div>
               <div className="flex justify-end gap-2 pt-2">
