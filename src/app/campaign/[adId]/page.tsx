@@ -1,4 +1,6 @@
 "use client";
+import { ResilientMedia } from "@/components/ResilientMedia";
+import { SelfHealingBoundary } from "@/components/ErrorBoundary";
 
 import React, { use, useEffect, useState } from "react";
 import { db } from "@/lib/firebase";
@@ -610,7 +612,7 @@ export default function AdvertiserPortal({
                 const streamUrl = normalizeMediaUrl(ad.videoUrl);
                 const isImage = streamUrl.split("?")[0].toLowerCase().match(/\.(jpg|jpeg|png|webp)$/);
                 if (isImage) {
-                  return <img src={streamUrl} alt={ad.title || "Ad creative"} className="w-full h-full object-cover rounded-xl" />;
+                  return <ResilientMedia src={ad.videoUrl} alt={ad.title || "Ad creative"} className="w-full h-full object-cover rounded-xl" />;
                 }
                 return (
                   <video

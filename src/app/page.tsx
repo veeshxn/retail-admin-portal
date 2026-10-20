@@ -1,4 +1,6 @@
 "use client";
+import { ResilientMedia } from "@/components/ResilientMedia";
+import { SelfHealingBoundary } from "@/components/ErrorBoundary";
 
 import React, { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
@@ -66,27 +68,9 @@ const normalizeMediaUrl = (url?: string) => {
   return clean;
 };
 
-const MediaPreview = ({ src, alt }: { src?: string; alt?: string }) => {
-  if (!src || typeof src !== "string") {
-    return <div className="w-full h-full bg-slate-950 flex items-center justify-center text-xs text-slate-500">No media</div>;
-  }
-  const streamUrl = normalizeMediaUrl(src);
-  const clean = streamUrl.split("?")[0].toLowerCase();
-  const isImage = clean.endsWith(".jpg") || clean.endsWith(".jpeg") || clean.endsWith(".png") || clean.endsWith(".webp");
-  if (isImage) {
-    return <img src={streamUrl} alt={alt || "Ad creative"} className="w-full h-full object-cover" />;
-  }
-  return (
-    <video
-      key={streamUrl}
-      src={streamUrl}
-      controls
-      playsInline
-      preload="auto"
-      className="w-full h-full object-cover bg-black"
-    />
-  );
-};
+const MediaPreview = ({ src, alt }: { src?: string; alt?: string }) => (
+  <ResilientMedia src={src} alt={alt || "Ad creative"} className="w-full h-full object-cover" />
+);
 
 const FleetMap = dynamic(() => import("@/components/FleetMap"), {
   ssr: false,
