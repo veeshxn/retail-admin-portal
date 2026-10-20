@@ -159,7 +159,7 @@ export default function FleetMap({ devices }: FleetMapProps) {
               transition: background-color 0.2s;
             "
             onmouseover="this.style.backgroundColor='#4338ca'"
-            onmouseout="this.style.backgroundColor='#4f46e5'"
+            onmouseout="this.style."
           >
             📍 Navigate / Get Directions ↗
           </a>

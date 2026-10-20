@@ -685,7 +685,7 @@ export default function OperationsPortal() {
           uploadTask.on(
             "state_changed",
             (snapshot) => {
-              const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+              const progress = (snapshot.bytesTransferred / (snapshot.totalBytes || 1)) * 100;
               setOtaUploadProgress(Math.round(progress));
             },
             (error) => reject(error),
@@ -1115,7 +1115,7 @@ export default function OperationsPortal() {
           uploadTask.on(
             "state_changed",
             (snapshot) => {
-              const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+              const progress = (snapshot.bytesTransferred / (snapshot.totalBytes || 1)) * 100;
               setUploadProgress(Math.round(progress));
             },
             (error) => reject(error),

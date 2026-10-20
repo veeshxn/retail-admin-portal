@@ -539,7 +539,7 @@ export default function AdvertiserPortal({
                   </div>
                 ) : (
                   dailyTimelineData.map((d, idx) => {
-                    const heightPct = Math.max(Math.round((d.plays / maxDailyPlays) * 100), 8);
+                    const heightPct = Math.max(Math.round((d.plays / (maxDailyPlays || 1)) * 100), 8);
                     return (
                       <div key={idx} className="flex-1 flex flex-col items-center gap-2 h-full justify-end group">
                         <div className="opacity-0 group-hover:opacity-100 transition text-[10px] font-mono text-cyan-400 text-center">
@@ -566,7 +566,7 @@ export default function AdvertiserPortal({
             <div className="space-y-3">
               <div className="h-56 w-full flex items-end gap-1.5 pt-6 px-2 bg-slate-950/60 rounded-xl border border-slate-800/80">
                 {hourlyTimelineData.map((h, idx) => {
-                  const heightPct = Math.max(Math.round((h.plays / maxHourlyPlays) * 100), 6);
+                  const heightPct = Math.max(Math.round((h.plays / (maxHourlyPlays || 1)) * 100), 6);
                   return (
                     <div key={idx} className="flex-1 flex flex-col items-center gap-1.5 h-full justify-end group">
                       <div className="opacity-0 group-hover:opacity-100 transition text-[9px] font-mono text-cyan-400 text-center">
