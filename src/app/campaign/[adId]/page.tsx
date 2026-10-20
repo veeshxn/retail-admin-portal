@@ -835,11 +835,13 @@ export default function AdvertiserPortal({
     </div>
   );
 }
-
-function formatTimelineDate(dateStr: string): string {
-  if (!dateStr || dateStr.length !== 10 || !dateStr.includes("-")) return dateStr;
+function formatTimelineDate(dateStr?: string): string {
+  if (!dateStr || typeof dateStr !== "string") return "";
   const parts = dateStr.split("-");
-  const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
-  const m = months[parseInt(parts[1], 10) - 1] || parts[1];
-  return parts[2] + " " + m;
+  if (parts.length === 3) {
+    const months = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+    const m = months[parseInt(parts[1], 10) - 1] || parts[1];
+    return parts[2] + " " + m;
+  }
+  return dateStr;
 }
