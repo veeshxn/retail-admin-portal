@@ -106,7 +106,7 @@ export default function ShopkeeperPortal({
   const [upiSaving, setUpiSaving] = useState(false);
   const [upiSuccessMessage, setUpiSuccessMessage] = useState<string | null>(null);
 
-  const currentMonth = "2026-09";
+  const currentMonth = "2026-10";
 
   // Check persistent session
   useEffect(() => {

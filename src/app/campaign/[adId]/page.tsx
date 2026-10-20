@@ -168,7 +168,7 @@ export default function AdvertiserPortal({
       const storeStats: Record<string, { plays: number; footfall: number; qrScans: number; daily: Record<string, { plays: number; scans: number; footfall: number }> }> = {};
       const dateMap: Record<string, { plays: number; scans: number; footfall: number }> = {};
 
-      // Determine ad creation start date (e.g., "2026-10-19")
+      // Clamp strictly: Campaign start date is ad.createdAt or system cutoff 2026-10-19
       let campaignStartDate = "2026-10-19";
       if ((ad as any).createdAt) {
         const raw = (ad as any).createdAt;
@@ -180,7 +180,6 @@ export default function AdvertiserPortal({
 
       snap.forEach((docSnap) => {
         const d = docSnap.data();
-
         let currentStoreId = d.storeId;
         let docDate = d.date;
 
@@ -191,10 +190,10 @@ export default function AdvertiserPortal({
         }
         if (!currentStoreId) return;
 
-        // Ignore summary docs without a valid YYYY-MM-DD date
+        // Strict date format verification
         if (!docDate || !/^\d{4}-\d{2}-\d{2}$/.test(docDate)) return;
 
-        // CLAMP: Exclude all historical telemetry before the ad was created
+        // CLAMP: Eliminate any pre-campaign hardware telemetry (e.g. 2026-10-10)
         if (docDate < campaignStartDate) return;
 
         let docAdPlays = 0;
@@ -203,9 +202,7 @@ export default function AdvertiserPortal({
         } else if (d[`ad_impressions.${adKey}`]) {
           docAdPlays = Number(d[`ad_impressions.${adKey}`]);
         }
-        // STRICT RULE: If this ad has no verified impressions in the document, plays = 0 (Never fallback to total_impressions)
 
-        // Only count store footfall on days when this ad actually had active broadcasts or scans
         const docFootfall = (docAdPlays > 0 || (d.qr_scans && d.qr_scans[adKey])) ? Number(d.total_ble_footfall || 0) : 0;
 
         let adScansForDoc = 0;
@@ -247,13 +244,13 @@ export default function AdvertiserPortal({
       setTotalAudienceFootfall(footfall);
       setTotalQrScans(qrCount);
 
-      // Date-wise timeline (only dates on/after campaign creation)
+      // Chronological timeline
       const sortedDates = Object.entries(dateMap)
         .map(([date, data]) => ({ date, ...data }))
         .sort((a, b) => a.date.localeCompare(b.date));
       setDailyTimelineData(sortedDates);
 
-      // Hourly Distribution based strictly on verified campaign plays
+      // Hourly Distribution scaled strictly to verified plays
       const hourlyDistribution = [
         { hour: "09:00", weight: 0.03 },
         { hour: "10:00", weight: 0.04 },
@@ -486,7 +483,7 @@ export default function AdvertiserPortal({
             <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Connected Kiosks</p>
             <p className="text-2xl font-bold mt-1 text-white flex items-center gap-2 font-mono">
               <Building2 className="w-5 h-5 text-slate-400" />
-              {totalDisplaysCount} Screens
+              {totalDisplaysCount === 1 ? "1 Screen" : totalDisplaysCount + " Screens"}
             </p>
             <p className="text-[11px] text-slate-500 mt-1">Active retail tablets</p>
           </div>
