@@ -53,6 +53,18 @@ import {
 } from "lucide-react";
 import type { MapDevice } from "@/components/FleetMap";
 
+const normalizeMediaUrl = (url: string) => {
+  if (!url) return "";
+  let clean = url.trim();
+  if (clean.includes("dropbox.com") && clean.includes("dl=0")) {
+    return clean.replace("dl=0", "raw=1");
+  }
+  if (clean.includes("dropbox.com") && !clean.includes("raw=1") && !clean.includes("dl=1")) {
+    return clean.includes("?") ? clean + "&raw=1" : clean + "?raw=1";
+  }
+  return clean;
+};
+
 const MediaPreview = ({ src, alt }: { src?: string; alt?: string }) => {
   if (!src || typeof src !== "string") {
     return <div className="w-full h-full bg-slate-950 flex items-center justify-center text-xs text-slate-500">No media</div>;
@@ -1058,6 +1070,11 @@ export default function OperationsPortal() {
   // Create Ad with Full Fields (Billing Structure & Duration Included)
   const handleCreateAd = async (e: React.FormEvent) => {
     const finalUrl = (adActionUrl && adActionUrl.trim()) ? adActionUrl.trim() : "https://brand.com/deal";
+    
+    if (adVideoUrl && (adVideoUrl.includes("dropbox.com/home") || adVideoUrl.endsWith("dropbox.com/"))) {
+      alert("Invalid Dropbox URL: You pasted your Dropbox home page. Please use Share -> Copy Link on the actual file.");
+      return;
+    }
     if (!adTitle || !adTitle.trim()) {
       alert("Please enter a Campaign Title");
       return;
@@ -1103,7 +1120,7 @@ export default function OperationsPortal() {
       await setDoc(doc(db, "active_ads", docId), {
         id: Number(adNumericId),
         title: adTitle.trim() || `Ad #${adNumericId}`,
-        videoUrl: finalUrl,
+        videoUrl: normalizeMediaUrl(finalUrl),
         durationSeconds: Number(adDuration) || 15,
         actionUrl: (adActionUrl && adActionUrl.trim()) ? adActionUrl.trim() : "https://brand.com/deal".trim() || null,
         isActive: true,
@@ -1694,7 +1711,7 @@ export default function OperationsPortal() {
                         </div>
 
                         <div className="relative rounded-lg overflow-hidden bg-black aspect-video flex items-center justify-center border border-slate-800">
-                          <MediaPreview src={ad.videoUrl} alt={ad.title || "Ad creative"} />
+                          <MediaPreview src={normalizeMediaUrl(ad.videoUrl)} alt={ad.title || "Ad creative"} />
                         </div>
 
                         {ad.actionUrl && (
