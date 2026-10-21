@@ -577,8 +577,9 @@ export default function OperationsPortal() {
           actionUrl: d.actionUrl || d.targetUrl || "",
           isActive: active,
           pricingModel: d.pricingModel || "FLAT_CONTRACT",
-          contractAmount: Number(d.contractAmount || 10000),
+          contractAmount: typeof d.contractAmount === "number" ? d.contractAmount : (d.agreedFee ? Number(d.agreedFee) : 10000),
           clientPin: d.clientPin || "1234",
+          target_plays: typeof d.target_plays === "number" ? d.target_plays : (typeof d.targetPlays === "number" ? d.targetPlays : 1000000),
         });
       });
 
@@ -951,12 +952,13 @@ export default function OperationsPortal() {
   const openEditAdModal = (ad: ActiveAd) => {
     if (!isMaster) return;
     setEditingAd(ad);
-    setEditAdTitle(ad.title);
-    setEditAdDuration(ad.durationSeconds);
+    setEditAdTitle(ad.title || "");
+    setEditAdDuration(ad.durationSeconds || 15);
     setEditAdActionUrl(ad.actionUrl || "");
-    setEditAdPricingModel(ad.pricingModel);
-    setEditAdContractAmount(ad.contractAmount);
+    setEditAdPricingModel(ad.pricingModel || "FLAT_CONTRACT");
+    setEditAdContractAmount(typeof ad.contractAmount === "number" ? ad.contractAmount : 10000);
     setEditAdClientPin(ad.clientPin || "1234");
+    setEditAdTargetPlays(typeof ad.target_plays === "number" ? ad.target_plays : 1000000);
   };
 
   const handleUpdateAd = async (e: React.FormEvent) => {
@@ -1151,6 +1153,7 @@ export default function OperationsPortal() {
         isActive: true,
         pricingModel: adPricingModel,
         contractAmount: Number(adContractAmount) || 0,
+        target_plays: Number(adTargetPlays || 1000000),
         clientPin: adClientPin.trim() || "1234",
       });
 
