@@ -2127,7 +2127,7 @@ export default function OperationsPortal() {
       {/* MODAL 1: EDIT STORE PROFILE & TERMS                            */}
       {/* ============================================================== */}
       {isMaster && editingStore && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 pointer-events-auto">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm overflow-y-auto p-4 flex justify-center items-start sm:items-center pointer-events-auto">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
               <div className="flex items-center gap-2">
@@ -2264,7 +2264,7 @@ export default function OperationsPortal() {
       {/* MODAL 2: ONBOARD STORE (ALL DETAILS MATCHING EDIT STORE)       */}
       {/* ============================================================== */}
       {isMaster && newStoreModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 pointer-events-auto">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm overflow-y-auto p-4 flex justify-center items-start sm:items-center pointer-events-auto">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
               <div className="flex items-center gap-2">
@@ -2455,7 +2455,7 @@ export default function OperationsPortal() {
       {/* MODAL 3: CREATE AD CAMPAIGN (FULL FIELDS & DURATION INCLUDED)   */}
       {/* ============================================================== */}
       {isMaster && newAdModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 pointer-events-auto">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm overflow-y-auto p-4 flex justify-center items-start sm:items-center pointer-events-auto">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
               <div className="flex items-center gap-2">
@@ -2489,43 +2489,49 @@ export default function OperationsPortal() {
                 </div>
               </div>
 
-              {/* BILLING MODEL & DURATION (MATCHING EDIT AD MODAL) */}
-              <div className="grid grid-cols-2 gap-3 p-3 bg-slate-950 border border-slate-800 rounded-xl">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Billing Structure</label>
-                  <select
-                    value={adPricingModel}
-                    onChange={(e) => setAdPricingModel(e.target.value as any)}
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white"
-                  >
-                    <option value="FLAT_CONTRACT">Flat Contract Retainer</option>
-                    <option value="PER_PLAY">Performance (Per 1k Plays)</option>
-                  </select>
+              {/* CONTRACT & DELIVERY TERMS */}
+              <div className="p-3.5 bg-slate-950 border border-slate-850 rounded-xl space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Billing Structure</label>
+                    <select
+                      value={adPricingModel}
+                      onChange={(e) => setAdPricingModel(e.target.value as any)}
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white"
+                    >
+                      <option value="FLAT_CONTRACT">Flat Contract Retainer</option>
+                      <option value="PER_PLAY">Performance (Per 1k Plays)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      {adPricingModel === "FLAT_CONTRACT" ? "Agreed Fee (₹)" : "Rate / 1k Plays (₹)"}
+                    </label>
+                    <input
+                      type="number"
+                      value={adContractAmount}
+                      onChange={(e) => setAdContractAmount(Number(e.target.value))}
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono"
+                      required
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    {adPricingModel === "FLAT_CONTRACT" ? "Agreed Fee (₹)" : "Rate / 1k Plays (₹)"}
-                  </label>
+
+                <div className="pt-2.5 border-t border-slate-800">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-semibold text-slate-300">Total Contract Plays Cap</label>
+                    <span className="text-[10px] text-amber-400 font-medium bg-amber-400/10 border border-amber-400/20 px-2 py-0.5 rounded-full font-mono">
+                      Auto-Sunsets at Limit (0 = Unlimited)
+                    </span>
+                  </div>
                   <input
                     type="number"
-                    value={adContractAmount}
-                    onChange={(e) => setAdContractAmount(Number(e.target.value))}
-                    className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono"
-                    required
+                    value={adTargetPlays}
+                    onChange={(e) => setAdTargetPlays(Number(e.target.value))}
+                    placeholder="e.g. 1000000"
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-amber-400 font-mono focus:border-amber-500/50 outline-none"
                   />
                 </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Total Contract Plays Cap (0 = Unlimited / Auto-Sunset)</label>
-                <input
-                  type="number"
-                  value={adTargetPlays}
-                  onChange={(e) => setAdTargetPlays(Number(e.target.value))}
-                  placeholder="e.g. 1000000"
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-amber-400 font-mono"
-                />
-                <p className="text-[10px] text-slate-500 mt-1 font-mono">Campaign will automatically sunset and drop from tablet rotation when reached.</p>
               </div>
 
               <div className="grid grid-cols-2 gap-3">
@@ -2597,7 +2603,7 @@ export default function OperationsPortal() {
       {/* MODAL 4: CREATE MYSTERY CAMPAIGN                               */}
       {/* ============================================================== */}
       {isMaster && newMysteryModal && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 pointer-events-auto">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm overflow-y-auto p-4 flex justify-center items-start sm:items-center pointer-events-auto">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
               <div className="flex items-center gap-2 text-fuchsia-400 font-bold">
@@ -2721,7 +2727,7 @@ export default function OperationsPortal() {
       {/* MODAL 5: EDIT MYSTERY CAMPAIGN                                 */}
       {/* ============================================================== */}
       {isMaster && editingMystery && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 pointer-events-auto">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm overflow-y-auto p-4 flex justify-center items-start sm:items-center pointer-events-auto">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
               <div className="flex items-center gap-2 text-fuchsia-400 font-bold">
@@ -2774,7 +2780,7 @@ export default function OperationsPortal() {
       {/* MODAL 6: EDIT AD CAMPAIGN                                      */}
       {/* ============================================================== */}
       {isMaster && editingAd && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 pointer-events-auto">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm overflow-y-auto p-4 flex justify-center items-start sm:items-center pointer-events-auto">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
               <div className="flex items-center gap-2">
@@ -2790,30 +2796,49 @@ export default function OperationsPortal() {
                 <input type="text" value={editAdTitle} onChange={(e) => setEditAdTitle(e.target.value)} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-white" required />
               </div>
 
-              <div className="grid grid-cols-2 gap-3 p-3 bg-slate-950 border border-slate-800 rounded-xl">
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Billing Structure</label>
-                  <select value={editAdPricingModel} onChange={(e) => setEditAdPricingModel(e.target.value as any)} className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white">
-                    <option value="FLAT_CONTRACT">Flat Contract Retainer</option>
-                    <option value="PER_PLAY">Performance (Per 1k Plays)</option>
-                  </select>
+              {/* CONTRACT & DELIVERY TERMS */}
+              <div className="p-3.5 bg-slate-950 border border-slate-850 rounded-xl space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">Billing Structure</label>
+                    <select
+                      value={editAdPricingModel}
+                      onChange={(e) => setEditAdPricingModel(e.target.value as any)}
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-white"
+                    >
+                      <option value="FLAT_CONTRACT">Flat Contract Retainer</option>
+                      <option value="PER_PLAY">Performance (Per 1k Plays)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-300 mb-1">
+                      {editAdPricingModel === "FLAT_CONTRACT" ? "Agreed Fee (₹)" : "Rate / 1k Plays (₹)"}
+                    </label>
+                    <input
+                      type="number"
+                      value={editAdContractAmount}
+                      onChange={(e) => setEditAdContractAmount(Number(e.target.value))}
+                      className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono"
+                      required
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">{editAdPricingModel === "FLAT_CONTRACT" ? "Agreed Fee (₹)" : "Rate / 1k Plays (₹)"}</label>
-                  <input type="number" value={editAdContractAmount} onChange={(e) => setEditAdContractAmount(Number(e.target.value))} className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono" required />
-                </div>
-              </div>
 
-              <div>
-                <label className="block text-xs font-semibold text-slate-300 mb-1">Total Contract Plays Cap (0 = Unlimited / Auto-Sunset)</label>
-                <input
-                  type="number"
-                  value={editAdTargetPlays}
-                  onChange={(e) => setEditAdTargetPlays(Number(e.target.value))}
-                  placeholder="e.g. 1000000"
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-amber-400 font-mono"
-                />
-                <p className="text-[10px] text-slate-500 mt-1 font-mono">Campaign will automatically sunset and drop from tablet rotation when reached.</p>
+                <div className="pt-2.5 border-t border-slate-800">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-semibold text-slate-300">Total Contract Plays Cap</label>
+                    <span className="text-[10px] text-amber-400 font-medium bg-amber-400/10 border border-amber-400/20 px-2 py-0.5 rounded-full font-mono">
+                      Auto-Sunsets at Limit (0 = Unlimited)
+                    </span>
+                  </div>
+                  <input
+                    type="number"
+                    value={editAdTargetPlays}
+                    onChange={(e) => setEditAdTargetPlays(Number(e.target.value))}
+                    placeholder="e.g. 1000000"
+                    className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-amber-400 font-mono focus:border-amber-500/50 outline-none"
+                  />
+                </div>
               </div>
 
               <div>
@@ -2845,7 +2870,7 @@ export default function OperationsPortal() {
       {/* MODAL 7: DISBURSE SETTLEMENT                                   */}
       {/* ============================================================== */}
       {isMaster && payoutModalStore && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 pointer-events-auto">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm overflow-y-auto p-4 flex justify-center items-start sm:items-center pointer-events-auto">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
               <div className="flex items-center gap-2">
@@ -2876,7 +2901,7 @@ export default function OperationsPortal() {
       {/* MODAL 8: SCREENSHOT PREVIEW                                    */}
       {/* ============================================================== */}
       {selectedScreenshot && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 pointer-events-auto">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm overflow-y-auto p-4 flex justify-center items-start sm:items-center pointer-events-auto">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-3xl w-full p-4 space-y-3">
             <div className="flex items-center justify-between">
               <h4 className="text-sm font-bold text-white">Live Screenshot: {selectedScreenshot.storeId}</h4>
@@ -2893,7 +2918,7 @@ export default function OperationsPortal() {
       {/* MODAL 9: GLOBAL OTA DEPLOYMENT                                 */}
       {/* ============================================================== */}
       {isMaster && otaModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 pointer-events-auto">
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm overflow-y-auto p-4 flex justify-center items-start sm:items-center pointer-events-auto">
           <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 space-y-4 shadow-2xl">
             <div className="flex items-center justify-between pb-2 border-b border-slate-800">
               <h3 className="text-base font-bold text-white">Deploy Fleet OTA Update</h3>
