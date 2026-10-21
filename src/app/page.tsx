@@ -139,6 +139,7 @@ interface ActiveAd {
   pricingModel: "FLAT_CONTRACT" | "PER_PLAY";
   contractAmount: number;
   clientPin?: string;
+  target_plays?: number;
 }
 
 interface MysteryCampaign {
@@ -278,6 +279,7 @@ export default function OperationsPortal() {
   const [adVideoUrl, setAdVideoUrl] = useState("");
   const [adPricingModel, setAdPricingModel] = useState<"FLAT_CONTRACT" | "PER_PLAY">("FLAT_CONTRACT");
   const [adContractAmount, setAdContractAmount] = useState<number>(10000);
+  const [adTargetPlays, setAdTargetPlays] = useState<number>(1000000);
   const [adClientPin, setAdClientPin] = useState("1234");
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
@@ -290,6 +292,7 @@ export default function OperationsPortal() {
   const [editAdActionUrl, setEditAdActionUrl] = useState("");
   const [editAdPricingModel, setEditAdPricingModel] = useState<"FLAT_CONTRACT" | "PER_PLAY">("FLAT_CONTRACT");
   const [editAdContractAmount, setEditAdContractAmount] = useState<number>(10000);
+  const [editAdTargetPlays, setEditAdTargetPlays] = useState<number>(1000000);
   const [editAdClientPin, setEditAdClientPin] = useState("");
 
   // Mystery Campaigns State
@@ -967,6 +970,7 @@ export default function OperationsPortal() {
           title: editAdTitle.trim(),
           durationSeconds: Number(editAdDuration),
           actionUrl: editAdActionUrl.trim() || null,
+          target_plays: Number(editAdTargetPlays || 0),
           pricingModel: editAdPricingModel,
           contractAmount: Number(editAdContractAmount),
           clientPin: editAdClientPin.trim() || "1234",
@@ -2509,6 +2513,18 @@ export default function OperationsPortal() {
                 </div>
               </div>
 
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Total Contract Plays Cap (0 = Unlimited / Auto-Sunset)</label>
+                <input
+                  type="number"
+                  value={adTargetPlays}
+                  onChange={(e) => setAdTargetPlays(Number(e.target.value))}
+                  placeholder="e.g. 1000000"
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-amber-400 font-mono"
+                />
+                <p className="text-[10px] text-slate-500 mt-1 font-mono">Campaign will automatically sunset and drop from tablet rotation when reached.</p>
+              </div>
+
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1">Duration (Seconds)</label>
@@ -2783,6 +2799,18 @@ export default function OperationsPortal() {
                   <label className="block text-xs font-semibold text-slate-300 mb-1">{editAdPricingModel === "FLAT_CONTRACT" ? "Agreed Fee (₹)" : "Rate / 1k Plays (₹)"}</label>
                   <input type="number" value={editAdContractAmount} onChange={(e) => setEditAdContractAmount(Number(e.target.value))} className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-sm text-white font-mono" required />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">Total Contract Plays Cap (0 = Unlimited / Auto-Sunset)</label>
+                <input
+                  type="number"
+                  value={editAdTargetPlays}
+                  onChange={(e) => setEditAdTargetPlays(Number(e.target.value))}
+                  placeholder="e.g. 1000000"
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-lg text-sm text-amber-400 font-mono"
+                />
+                <p className="text-[10px] text-slate-500 mt-1 font-mono">Campaign will automatically sunset and drop from tablet rotation when reached.</p>
               </div>
 
               <div>
