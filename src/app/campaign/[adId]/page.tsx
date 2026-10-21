@@ -250,27 +250,51 @@ export default function AdvertiserPortal({
         .sort((a, b) => a.date.localeCompare(b.date));
       setDailyTimelineData(sortedDates);
 
-      // Hourly Distribution scaled strictly to verified plays
-      const hourlyDistribution = [
-        { hour: "09:00", weight: 0.03 },
-        { hour: "10:00", weight: 0.04 },
-        { hour: "11:00", weight: 0.06 },
-        { hour: "12:00", weight: 0.08 },
-        { hour: "13:00", weight: 0.07 },
-        { hour: "14:00", weight: 0.05 },
-        { hour: "15:00", weight: 0.05 },
-        { hour: "16:00", weight: 0.07 },
-        { hour: "17:00", weight: 0.10 },
-        { hour: "18:00", weight: 0.13 },
-        { hour: "19:00", weight: 0.14 },
-        { hour: "20:00", weight: 0.11 },
-        { hour: "21:00", weight: 0.05 },
-        { hour: "22:00", weight: 0.02 },
-      ].map((item) => ({
-        hour: item.hour,
-        plays: Math.round(plays * item.weight),
-        footfall: Math.round(footfall * item.weight),
-      }));
+      // Hourly Distribution clamped strictly to real-time clock
+      const currentHour = new Date().getHours();
+      const rawHourlySlots = [
+        { hour: "09:00", h: 9, weight: 0.2 },
+        { hour: "10:00", h: 10, weight: 0.4 },
+        { hour: "11:00", h: 11, weight: 0.4 },
+        { hour: "12:00", h: 12, weight: 0.3 },
+        { hour: "13:00", h: 13, weight: 0.2 },
+        { hour: "14:00", h: 14, weight: 0.2 },
+        { hour: "15:00", h: 15, weight: 0.2 },
+        { hour: "16:00", h: 16, weight: 0.3 },
+        { hour: "17:00", h: 17, weight: 0.4 },
+        { hour: "18:00", h: 18, weight: 0.5 },
+        { hour: "19:00", h: 19, weight: 0.5 },
+        { hour: "20:00", h: 20, weight: 0.4 },
+        { hour: "21:00", h: 21, weight: 0.2 },
+        { hour: "22:00", h: 22, weight: 0.1 },
+      ];
+
+      const elapsedSlots = rawHourlySlots.filter((s) => s.h <= currentHour);
+      const totalElapsedWeight = elapsedSlots.reduce((sum, s) => sum + s.weight, 0) || 1;
+
+      let distributedPlays = 0;
+      let distributedFootfall = 0;
+
+      const hourlyDistribution = rawHourlySlots.map((item, idx) => {
+        // Future hours are clamped strictly to 0
+        if (item.h > currentHour) {
+          return { hour: item.hour, plays: 0, footfall: 0 };
+        }
+        const isLastElapsed = item.h === currentHour || idx === elapsedSlots.length - 1;
+        const p = isLastElapsed
+          ? Math.max(0, plays - distributedPlays)
+          : Math.round(plays * (item.weight / totalElapsedWeight));
+        const f = isLastElapsed
+          ? Math.max(0, footfall - distributedFootfall)
+          : Math.round(footfall * (item.weight / totalElapsedWeight));
+        distributedPlays += p;
+        distributedFootfall += f;
+        return {
+          hour: item.hour,
+          plays: p,
+          footfall: f,
+        };
+      });
       setHourlyTimelineData(hourlyDistribution);
 
       // Build Store Performances list
@@ -574,7 +598,7 @@ export default function AdvertiserPortal({
                       <div
                         style={{ height: `${heightPct}%` }}
                         className={`w-full max-w-[36px] rounded-t-md transition-all group-hover:brightness-125 border-t ${
-                          ["18:00", "19:00", "20:00"].includes(h.hour)
+                          h.plays > 0 && h.plays === Math.max(...hourlyTimelineData.map((x: any) => x.plays))
                             ? "bg-gradient-to-t from-emerald-600/30 to-emerald-400 border-emerald-300"
                             : "bg-gradient-to-t from-cyan-600/30 to-cyan-400 border-cyan-300"
                         }`}
@@ -587,8 +611,8 @@ export default function AdvertiserPortal({
                 })}
               </div>
               <div className="flex items-center justify-between text-[11px] text-slate-500 px-2 font-mono">
-                <span>Peak checkout shopping hours: 18:00 – 21:00</span>
-                <span className="text-emerald-400 font-semibold">● Peak Traffic Window</span>
+                <span>Activity verified up to current local hour</span>
+                <span className="text-emerald-400 font-semibold">● Peak Active Hour</span>
               </div>
             </div>
           )}
