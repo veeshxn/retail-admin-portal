@@ -1078,7 +1078,7 @@ export default function OperationsPortal() {
       alert("Please select a media file (Image or Video) or enter a Direct URL");
       return;
     }
-    alert("Publishing campaign & uploading creative to Firebase... Please click OK to proceed.");
+    
   
     e.preventDefault();
     if (!isMaster) return;
