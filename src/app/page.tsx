@@ -174,6 +174,32 @@ interface PayoutRecord {
 }
 
 export default function OperationsPortal() {
+
+  const [surpriseBoxEnabled, setSurpriseBoxEnabled] = useState(true);
+
+  useEffect(() => {
+    const unsub = onSnapshot(doc(db, "system_config", "fleet_settings"), (snap) => {
+      if (snap.exists()) {
+        setSurpriseBoxEnabled(snap.data()?.show_surprise_box ?? true);
+      }
+    });
+    return () => unsub();
+  }, []);
+
+  const handleToggleSurpriseBox = async () => {
+    const nextState = !surpriseBoxEnabled;
+    setSurpriseBoxEnabled(nextState);
+    try {
+      await setDoc(doc(db, "system_config", "fleet_settings"), {
+        show_surprise_box: nextState,
+        updated_at: new Date().toISOString()
+      }, { merge: true });
+    } catch (err) {
+      console.error("Failed to update surprise box visibility:", err);
+    }
+  };
+
+
   const [adminRole, setAdminRole] = useState<"MASTER" | "VIEWER" | null>(null);
   const [pinInput, setPinInput] = useState("");
   const [pinError, setPinError] = useState(false);
